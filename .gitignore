@@ -1,0 +1,4 @@
+bin/
+.mcp-code-graph/
+*.test
+*.out
