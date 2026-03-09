@@ -83,6 +83,7 @@ func (p *GoParser) ParsePackage(dir string) (*parser.ParseResult, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes,
 		Dir:  dir,
+		Fset: p.fset,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")
