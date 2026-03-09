@@ -1,0 +1,157 @@
+package graph
+
+import (
+	"testing"
+)
+
+func TestGraphAddNode(t *testing.T) {
+	g := New()
+	node := &Node{
+		Type:    NodeTypeFunction,
+		Package: "main",
+		Name:    "test",
+		File:    "test.go",
+		Line:    1,
+	}
+	node.ID = node.GenerateID()
+
+	g.AddNode(node)
+
+	if g.NodeCount() != 1 {
+		t.Errorf("NodeCount() = %d, want 1", g.NodeCount())
+	}
+
+	got, err := g.GetNode(node.ID)
+	if err != nil {
+		t.Fatalf("GetNode() error = %v", err)
+	}
+	if got.Name != node.Name {
+		t.Errorf("GetNode().Name = %q, want %q", got.Name, node.Name)
+	}
+}
+
+func TestGraphAddEdge(t *testing.T) {
+	g := New()
+
+	from := &Node{Type: NodeTypeFunction, Package: "main", Name: "caller", File: "test.go", Line: 1}
+	from.ID = from.GenerateID()
+
+	to := &Node{Type: NodeTypeFunction, Package: "main", Name: "callee", File: "test.go", Line: 5}
+	to.ID = to.GenerateID()
+
+	g.AddNode(from)
+	g.AddNode(to)
+	g.AddEdge(&Edge{From: from.ID, To: to.ID, Type: EdgeTypeCalls})
+
+	if g.EdgeCount() != 1 {
+		t.Errorf("EdgeCount() = %d, want 1", g.EdgeCount())
+	}
+
+	callers := g.GetCallers(to.ID)
+	if len(callers) != 1 {
+		t.Errorf("GetCallers() = %d nodes, want 1", len(callers))
+	}
+}
+
+func TestGraphGetCallees(t *testing.T) {
+	g := New()
+
+	caller := &Node{Type: NodeTypeFunction, Package: "main", Name: "caller", File: "test.go", Line: 1}
+	caller.ID = caller.GenerateID()
+
+	callee := &Node{Type: NodeTypeFunction, Package: "main", Name: "callee", File: "test.go", Line: 5}
+	callee.ID = callee.GenerateID()
+
+	g.AddNode(caller)
+	g.AddNode(callee)
+	g.AddEdge(&Edge{From: caller.ID, To: callee.ID, Type: EdgeTypeCalls})
+
+	callees := g.GetCallees(caller.ID)
+	if len(callees) != 1 {
+		t.Errorf("GetCallees() = %d nodes, want 1", len(callees))
+	}
+}
+
+func TestGraphGetNodesByType(t *testing.T) {
+	g := New()
+
+	fn1 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn1", File: "test.go", Line: 1}
+	fn1.ID = fn1.GenerateID()
+	g.AddNode(fn1)
+
+	fn2 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn2", File: "test.go", Line: 10}
+	fn2.ID = fn2.GenerateID()
+	g.AddNode(fn2)
+
+	typ := &Node{Type: NodeTypeType, Package: "main", Name: "MyType", File: "test.go", Line: 20}
+	g.AddNode(typ)
+
+	functions := g.GetNodesByType(NodeTypeFunction)
+	if len(functions) != 2 {
+		t.Errorf("GetNodesByType(function) = %d nodes, want 2", len(functions))
+	}
+
+	functionIDs := make(map[string]bool)
+	for _, f := range functions {
+		functionIDs[f.ID] = true
+	}
+	if !functionIDs[fn1.ID] || !functionIDs[fn2.ID] {
+		t.Error("GetNodesByType(function) missing expected nodes")
+	}
+}
+
+func TestGraphGetNodesByPackage(t *testing.T) {
+	g := New()
+
+	fn1 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn1", File: "test.go", Line: 1}
+	g.AddNode(fn1)
+
+	fn2 := &Node{Type: NodeTypeFunction, Package: "pkg", Name: "fn2", File: "pkg.go", Line: 1}
+	g.AddNode(fn2)
+
+	mainNodes := g.GetNodesByPackage("main")
+	if len(mainNodes) != 1 {
+		t.Errorf("GetNodesByPackage(main) = %d nodes, want 1", len(mainNodes))
+	}
+}
+
+func TestGraphRemoveNodesForPackage(t *testing.T) {
+	g := New()
+
+	fn1 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn1", File: "test.go", Line: 1}
+	fn1.ID = fn1.GenerateID()
+	g.AddNode(fn1)
+
+	fn2 := &Node{Type: NodeTypeFunction, Package: "pkg", Name: "fn2", File: "pkg.go", Line: 1}
+	fn2.ID = fn2.GenerateID()
+	g.AddNode(fn2)
+
+	g.AddEdge(&Edge{From: fn1.ID, To: fn2.ID, Type: EdgeTypeCalls})
+
+	g.RemoveNodesForPackage("pkg")
+
+	if g.NodeCount() != 1 {
+		t.Errorf("NodeCount() = %d, want 1", g.NodeCount())
+	}
+
+	if _, err := g.GetNode(fn2.ID); err == nil {
+		t.Error("GetNode(fn2) should fail, node should be removed")
+	}
+}
+
+func TestGraphAllNodes(t *testing.T) {
+	g := New()
+
+	fn1 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn1", File: "test.go", Line: 1}
+	fn1.ID = fn1.GenerateID()
+	g.AddNode(fn1)
+
+	fn2 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn2", File: "test.go", Line: 10}
+	fn2.ID = fn2.GenerateID()
+	g.AddNode(fn2)
+
+	all := g.AllNodes()
+	if len(all) != 2 {
+		t.Errorf("AllNodes() = %d nodes, want 2", len(all))
+	}
+}

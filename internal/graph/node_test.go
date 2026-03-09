@@ -70,8 +70,8 @@ func TestNodeID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.node.ID(); got != tt.expected {
-				t.Errorf("ID() = %q, want %q", got, tt.expected)
+			if got := tt.node.GenerateID(); got != tt.expected {
+				t.Errorf("GenerateID() = %q, want %q", got, tt.expected)
 			}
 		})
 	}

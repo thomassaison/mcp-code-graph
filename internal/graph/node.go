@@ -14,6 +14,7 @@ const (
 )
 
 type Node struct {
+	ID        string
 	Type      NodeType
 	Package   string
 	Name      string
@@ -32,10 +33,6 @@ type Summary struct {
 	Model       string `json:"model"`
 	CreatedAt   int64  `json:"created_at"`
 	UpdatedAt   int64  `json:"updated_at"`
-}
-
-func (n *Node) ID() string {
-	return n.GenerateID()
 }
 
 func (n *Node) GenerateID() string {
