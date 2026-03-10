@@ -104,9 +104,11 @@ func TestGraphGetNodesByPackage(t *testing.T) {
 	g := New()
 
 	fn1 := &Node{Type: NodeTypeFunction, Package: "main", Name: "fn1", File: "test.go", Line: 1}
+	fn1.ID = fn1.GenerateID()
 	g.AddNode(fn1)
 
 	fn2 := &Node{Type: NodeTypeFunction, Package: "pkg", Name: "fn2", File: "pkg.go", Line: 1}
+	fn2.ID = fn2.GenerateID()
 	g.AddNode(fn2)
 
 	mainNodes := g.GetNodesByPackage("main")
@@ -153,5 +155,68 @@ func TestGraphAllNodes(t *testing.T) {
 	all := g.AllNodes()
 	if len(all) != 2 {
 		t.Errorf("AllNodes() = %d nodes, want 2", len(all))
+	}
+}
+
+func TestGraph_GetNodesByName(t *testing.T) {
+	g := New()
+
+	g.AddNode(&Node{
+		ID:      "func_main_main_test.go:10",
+		Type:    NodeTypeFunction,
+		Package: "main",
+		Name:    "main",
+	})
+	g.AddNode(&Node{
+		ID:      "func_cmd_main_test.go:5",
+		Type:    NodeTypeFunction,
+		Package: "cmd",
+		Name:    "main",
+	})
+	g.AddNode(&Node{
+		ID:      "func_other_NewServer_test.go:15",
+		Type:    NodeTypeFunction,
+		Package: "other",
+		Name:    "NewServer",
+	})
+
+	nodes := g.GetNodesByName("main")
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	}
+
+	nodes = g.GetNodesByName("NonExistent")
+	if len(nodes) != 0 {
+		t.Fatalf("expected 0 nodes, got %d", len(nodes))
+	}
+}
+
+func TestGraph_GetNodesByNameAndPackage(t *testing.T) {
+	g := New()
+
+	g.AddNode(&Node{
+		ID:      "func_main_main_test.go:10",
+		Type:    NodeTypeFunction,
+		Package: "main",
+		Name:    "main",
+	})
+	g.AddNode(&Node{
+		ID:      "func_cmd_main_test.go:5",
+		Type:    NodeTypeFunction,
+		Package: "cmd",
+		Name:    "main",
+	})
+
+	nodes := g.GetNodesByNameAndPackage("main", "main")
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].Package != "main" {
+		t.Fatalf("expected package 'main', got '%s'", nodes[0].Package)
+	}
+
+	nodes = g.GetNodesByNameAndPackage("main", "nonexistent")
+	if len(nodes) != 0 {
+		t.Fatalf("expected 0 nodes, got %d", len(nodes))
 	}
 }

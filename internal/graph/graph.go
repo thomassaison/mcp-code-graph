@@ -18,6 +18,7 @@ type Graph struct {
 
 	byType    map[NodeType]map[string]*Node
 	byPackage map[string]map[string]*Node
+	byName    map[string]map[string]*Node
 }
 
 func New() *Graph {
@@ -27,12 +28,28 @@ func New() *Graph {
 		inEdges:   make(map[string][]*Edge),
 		byType:    make(map[NodeType]map[string]*Node),
 		byPackage: make(map[string]map[string]*Node),
+		byName:    make(map[string]map[string]*Node),
 	}
 }
 
 func (g *Graph) AddNode(node *Node) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if existing, ok := g.nodes[node.ID]; ok {
+		delete(g.byType[existing.Type], node.ID)
+		if len(g.byType[existing.Type]) == 0 {
+			delete(g.byType, existing.Type)
+		}
+		delete(g.byPackage[existing.Package], node.ID)
+		if len(g.byPackage[existing.Package]) == 0 {
+			delete(g.byPackage, existing.Package)
+		}
+		delete(g.byName[existing.Name], node.ID)
+		if len(g.byName[existing.Name]) == 0 {
+			delete(g.byName, existing.Name)
+		}
+	}
 
 	g.nodes[node.ID] = node
 
@@ -45,6 +62,11 @@ func (g *Graph) AddNode(node *Node) {
 		g.byPackage[node.Package] = make(map[string]*Node)
 	}
 	g.byPackage[node.Package][node.ID] = node
+
+	if g.byName[node.Name] == nil {
+		g.byName[node.Name] = make(map[string]*Node)
+	}
+	g.byName[node.Name][node.ID] = node
 }
 
 func (g *Graph) GetNode(id string) (*Node, error) {
@@ -134,6 +156,30 @@ func (g *Graph) GetNodesByPackage(pkg string) []*Node {
 	return nodes
 }
 
+func (g *Graph) GetNodesByName(name string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var nodes []*Node
+	for _, node := range g.byName[name] {
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+func (g *Graph) GetNodesByNameAndPackage(name, pkg string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var nodes []*Node
+	for _, node := range g.byName[name] {
+		if node.Package == pkg {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
 func (g *Graph) RemoveNodesForPackage(pkg string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -162,6 +208,13 @@ func (g *Graph) RemoveNodesForPackage(pkg string) {
 		node := g.nodes[id]
 		delete(g.nodes, id)
 		delete(g.byType[node.Type], id)
+		if len(g.byType[node.Type]) == 0 {
+			delete(g.byType, node.Type)
+		}
+		delete(g.byName[node.Name], id)
+		if len(g.byName[node.Name]) == 0 {
+			delete(g.byName, node.Name)
+		}
 	}
 	delete(g.byPackage, pkg)
 }
