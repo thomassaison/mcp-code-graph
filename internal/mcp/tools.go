@@ -775,40 +775,16 @@ func (s *Server) handleGetImplementorsMCP(ctx context.Context, req mcp.CallToolR
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	ifaceNode, err := s.graph.GetNode(interfaceID)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("interface not found: %s", interfaceID)), nil
+	args := map[string]any{
+		"interface_id": interfaceID,
 	}
 
-	implementors := s.graph.GetImplementors(interfaceID)
-
-	result := map[string]any{
-		"interface": map[string]any{
-			"id":      ifaceNode.ID,
-			"name":    ifaceNode.Name,
-			"package": ifaceNode.Package,
-			"methods": ifaceNode.Methods,
-		},
-		"implementors": []map[string]any{},
-	}
-
-	implList := make([]map[string]any, 0, len(implementors))
-	for _, impl := range implementors {
-		implList = append(implList, map[string]any{
-			"id":      impl.ID,
-			"name":    impl.Name,
-			"package": impl.Package,
-			"kind":    impl.Metadata["kind"],
-		})
-	}
-	result["implementors"] = implList
-
-	data, err := json.MarshalIndent(result, "", "  ")
+	result, err := s.handleGetImplementors(ctx, args)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return mcp.NewToolResultText(string(data)), nil
+	return mcp.NewToolResultText(result), nil
 }
 
 func (s *Server) handleGetInterfacesMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -817,50 +793,16 @@ func (s *Server) handleGetInterfacesMCP(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	typeNode, err := s.graph.GetNode(typeID)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("type not found: %s", typeID)), nil
+	args := map[string]any{
+		"type_id": typeID,
 	}
 
-	interfaces := s.graph.GetInterfaces(typeID)
-
-	result := map[string]any{
-		"type": map[string]any{
-			"id":      typeNode.ID,
-			"name":    typeNode.Name,
-			"package": typeNode.Package,
-			"kind":    typeNode.Metadata["kind"],
-		},
-		"interfaces": []map[string]any{},
-	}
-
-	ifaceList := make([]map[string]any, 0, len(interfaces))
-	for _, iface := range interfaces {
-		pointerReceiver := false
-		for _, edge := range s.graph.GetEdgesFrom(typeID) {
-			if edge.To == iface.ID && edge.Type == graph.EdgeTypeImplements {
-				if pr, ok := edge.Metadata["pointer_receiver"].(bool); ok {
-					pointerReceiver = pr
-				}
-				break
-			}
-		}
-
-		ifaceList = append(ifaceList, map[string]any{
-			"id":               iface.ID,
-			"name":             iface.Name,
-			"package":          iface.Package,
-			"pointer_receiver": pointerReceiver,
-		})
-	}
-	result["interfaces"] = ifaceList
-
-	data, err := json.MarshalIndent(result, "", "  ")
+	result, err := s.handleGetInterfaces(ctx, args)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return mcp.NewToolResultText(string(data)), nil
+	return mcp.NewToolResultText(result), nil
 }
 
 func (s *Server) handleSearchByBehaviorMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
