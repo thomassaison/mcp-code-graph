@@ -1,12 +1,15 @@
 package goparser
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
 	"go/token"
+	"log/slog"
 	"strings"
 
+	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 	"github.com/thomassaison/mcp-code-graph/internal/parser"
 	"golang.org/x/tools/go/packages"
@@ -23,6 +26,7 @@ func New() *GoParser {
 }
 
 func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
+	slog.Log(context.Background(), debug.LevelTrace, "parsing file", "path", path)
 	result := &parser.ParseResult{}
 
 	file, err := goparser.ParseFile(p.fset, path, nil, goparser.ParseComments)
@@ -76,6 +80,7 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 		}
 	}
 
+	slog.Log(context.Background(), debug.LevelTrace, "file parsed", "path", path, "functions", len(result.Nodes))
 	return result, nil
 }
 
