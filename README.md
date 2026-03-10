@@ -16,17 +16,25 @@ An MCP (Model Context Protocol) server that provides a code graph database for A
 go install github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest
 ```
 
-## Usage
-
-### Build and Run
+Or run directly without installing:
 
 ```bash
-# Build the binary
-go build -o bin/mcp-code-graph ./cmd/mcp-code-graph
+go run github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest
+```
 
-# Run in your project directory
+## Usage
+
+### Run in Your Project
+
+```bash
 cd /path/to/your/go/project
-/path/to/bin/mcp-code-graph
+go run github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest
+```
+
+Or if installed:
+
+```bash
+mcp-code-graph
 ```
 
 The server automatically:
@@ -74,7 +82,7 @@ Add to `~/.config/opencode/opencode.json`:
   "mcp": {
     "mcp-code-graph": {
       "type": "local",
-      "command": ["/absolute/path/to/bin/mcp-code-graph"],
+      "command": ["go", "run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"],
       "enabled": true
     }
   }
@@ -88,7 +96,7 @@ With semantic search (Ollama):
   "mcp": {
     "mcp-code-graph": {
       "type": "local",
-      "command": ["/absolute/path/to/bin/mcp-code-graph"],
+      "command": ["go", "run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"],
       "enabled": true,
       "environment": {
         "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"base_url\":\"http://localhost:11434/v1\",\"model\":\"nomic-embed-text\"}"
@@ -106,7 +114,8 @@ Add to your project's `.claude/settings.json` or `~/.claude/settings.json`:
 {
   "mcpServers": {
     "mcp-code-graph": {
-      "command": "/absolute/path/to/bin/mcp-code-graph"
+      "command": "go",
+      "args": ["run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"]
     }
   }
 }
@@ -118,7 +127,8 @@ With semantic search:
 {
   "mcpServers": {
     "mcp-code-graph": {
-      "command": "/absolute/path/to/bin/mcp-code-graph",
+      "command": "go",
+      "args": ["run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"],
       "env": {
         "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"api_key\":\"sk-...\",\"model\":\"text-embedding-3-small\"}"
       }
@@ -138,7 +148,8 @@ Add to your Claude Desktop config:
 {
   "mcpServers": {
     "mcp-code-graph": {
-      "command": "/absolute/path/to/bin/mcp-code-graph"
+      "command": "go",
+      "args": ["run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"]
     }
   }
 }
