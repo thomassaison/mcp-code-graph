@@ -46,10 +46,11 @@ function renderGraph(data) {
         });
     }
 
+    let edgeIdx = 0;
     for (const e of data.edges) {
         cy.add({
             data: {
-                id: 'e-' + e.from + '-' + e.to + '-' + e.type,
+                id: 'e-' + (edgeIdx++),
                 source: 'n-' + e.from,
                 target: 'n-' + e.to,
                 edgeType: e.type
