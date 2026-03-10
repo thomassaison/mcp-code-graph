@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/thomas-saison/mcp-code-graph/internal/graph"
 )
 
@@ -244,4 +245,104 @@ func (s *Server) handleUpdateSummary(ctx context.Context, args map[string]any) (
 	}
 
 	return fmt.Sprintf("Updated summary for function %s", node.Name), nil
+}
+
+// MCP handler methods (mcp-go compatible)
+
+func (s *Server) handleSearchFunctionsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	query, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	limit := 10
+	args := req.GetArguments()
+	if args != nil {
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+	}
+
+	handlerArgs := map[string]any{
+		"query": query,
+		"limit": float64(limit),
+	}
+
+	result, err := s.handleSearchFunctions(ctx, handlerArgs)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleGetCallersMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	functionID, err := req.RequireString("function_id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := map[string]any{
+		"function_id": functionID,
+	}
+
+	result, err := s.handleGetCallers(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleGetCalleesMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	functionID, err := req.RequireString("function_id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := map[string]any{
+		"function_id": functionID,
+	}
+
+	result, err := s.handleGetCallees(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleReindexProjectMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := map[string]any{}
+
+	result, err := s.handleReindexProject(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleUpdateSummaryMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	functionID, err := req.RequireString("function_id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	summaryText, err := req.RequireString("summary")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := map[string]any{
+		"function_id": functionID,
+		"summary":     summaryText,
+	}
+
+	result, err := s.handleUpdateSummary(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
 }

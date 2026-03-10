@@ -1,60 +1,76 @@
 package main
 
 import (
-	"context"
 	"flag"
-	"fmt"
+	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomas-saison/mcp-code-graph/internal/mcp"
 )
 
 func main() {
-	projectPath := flag.String("project", ".", "Path to the Go project to index")
-	dbPath := flag.String("db", ".mcp-code-graph/db.sqlite", "Path to the database file")
-	llmModel := flag.String("model", "gpt-4o-mini", "LLM model for summaries")
+	llmModel := flag.String("model", "", "LLM model for summaries (empty = mock)")
 	flag.Parse()
 
-	dbDir := filepath.Dir(*dbPath)
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating DB directory: %v\n", err)
-		os.Exit(1)
+	// Auto-detect project directory from current working directory
+	projectPath, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Failed to get working directory: %v", err)
 	}
 
+	// Determine database directory
+	// Check MCP_CODE_GRAPH_DIR env var, otherwise use project-local directory
+	dbDir := os.Getenv("MCP_CODE_GRAPH_DIR")
+	if dbDir == "" {
+		dbDir = filepath.Join(projectPath, ".mcp-code-graph")
+	}
+
+	// Ensure database directory exists
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		log.Fatalf("Failed to create database directory: %v", err)
+	}
+
+	// Database path (without extension - server adds suffixes)
+	dbPath := filepath.Join(dbDir, "db")
+
+	// Create server
 	server, err := mcp.NewServer(&mcp.Config{
-		DBPath:      *dbPath,
-		ProjectPath: *projectPath,
+		DBPath:      dbPath,
+		ProjectPath: projectPath,
 		LLMModel:    *llmModel,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating server: %v\n", err)
-		os.Exit(1)
-	}
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		fmt.Println("\nShutting down...")
-		cancel()
-	}()
-
-	if err := server.Start(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to create server: %v", err)
 	}
 
-	fmt.Printf("MCP Code Graph server started\n")
-	fmt.Printf("Project: %s\n", *projectPath)
-	fmt.Printf("Database: %s\n", *dbPath)
-	fmt.Printf("Functions indexed: %d\n", server.Graph().NodeCount())
+	// Index the project first (before starting MCP protocol)
+	if err := server.IndexProject(); err != nil {
+		log.Fatalf("Failed to index project: %v", err)
+	}
 
-	<-ctx.Done()
+	// Log startup info to stderr (stdout is used for MCP protocol)
+	log.Printf("MCP Code Graph server starting")
+	log.Printf("Project: %s", projectPath)
+	log.Printf("Database: %s", dbPath)
+	log.Printf("Functions indexed: %d", server.Graph().NodeCount())
+
+	// Create MCP server with capabilities
+	mcpSrv := mcpserver.NewMCPServer(
+		"mcp-code-graph",
+		"1.0.0",
+		mcpserver.WithToolCapabilities(true),
+		mcpserver.WithResourceCapabilities(true, true),
+	)
+
+	// Register tools and resources
+	server.RegisterTools(mcpSrv)
+	server.RegisterResources(mcpSrv)
+
+	// Start serving MCP protocol over stdio
+	if err := mcpserver.ServeStdio(mcpSrv); err != nil {
+		log.Printf("Server error: %v", err)
+		os.Exit(1)
+	}
 }

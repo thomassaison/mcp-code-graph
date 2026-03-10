@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/thomas-saison/mcp-code-graph/internal/graph"
 )
 
@@ -150,4 +152,38 @@ func (s *Server) readPackageResource(uri string) (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// MCP resource handler methods
+
+func (s *Server) handleFunctionResourceMCP(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+	uri := req.Params.URI
+	content, err := s.readFunctionResource(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return []mcp.ResourceContents{
+		mcp.TextResourceContents{
+			URI:      uri,
+			MIMEType: "application/json",
+			Text:     content,
+		},
+	}, nil
+}
+
+func (s *Server) handlePackageResourceMCP(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+	uri := req.Params.URI
+	content, err := s.readPackageResource(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return []mcp.ResourceContents{
+		mcp.TextResourceContents{
+			URI:      uri,
+			MIMEType: "application/json",
+			Text:     content,
+		},
+	}, nil
 }

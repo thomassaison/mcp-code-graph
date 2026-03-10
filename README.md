@@ -18,12 +18,86 @@ go install github.com/thomas-saison/mcp-code-graph/cmd/mcp-code-graph@latest
 
 ## Usage
 
-```bash
-# Index a project and start the server
-mcp-code-graph --project /path/to/go/project
+### Build and Run
 
-# Custom database location
-mcp-code-graph --project . --db ./data/codegraph.db
+```bash
+# Build the binary
+go build -o bin/mcp-code-graph ./cmd/mcp-code-graph
+
+# Run in your project directory
+cd /path/to/your/go/project
+/path/to/bin/mcp-code-graph
+```
+
+The server automatically:
+- Detects the project from the current working directory
+- Creates `.mcp-code-graph/` in the project root for the database
+
+### Command Line Options
+
+- `--model` - LLM model for summaries (empty = mock provider)
+
+### Environment Variables
+
+- `MCP_CODE_GRAPH_DIR` - Override database directory (default: `<project>/.mcp-code-graph`)
+
+## Client Integration
+
+### OpenCode
+
+Add to `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "mcp": {
+    "mcp-code-graph": {
+      "type": "local",
+      "command": ["/absolute/path/to/bin/mcp-code-graph"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Claude Code
+
+Add to your project's `.claude/settings.json` or `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-code-graph": {
+      "command": "/absolute/path/to/bin/mcp-code-graph"
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to your Claude Desktop config:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "mcp-code-graph": {
+      "command": "/absolute/path/to/bin/mcp-code-graph"
+    }
+  }
+}
+```
+
+> **Note**: All clients automatically set the working directory to your project root, so no `--project` flag is needed.
+
+### Git Ignore
+
+Add to your project's `.gitignore`:
+
+```
+.mcp-code-graph/
 ```
 
 ## MCP Tools
