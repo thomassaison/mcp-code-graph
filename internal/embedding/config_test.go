@@ -1,6 +1,7 @@
 package embedding
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -61,5 +62,33 @@ func TestNewProviderFromConfig_Nil(t *testing.T) {
 	}
 	if provider != nil {
 		t.Error("NewProviderFromConfig(nil) should return nil provider")
+	}
+}
+
+func TestParseConfig_InvalidJSON(t *testing.T) {
+	cfg, err := ParseConfig("{invalid json")
+	if err == nil {
+		t.Error("ParseConfig() expected error for invalid JSON, got nil")
+	}
+	if cfg != nil {
+		t.Errorf("ParseConfig() = %v, want nil", cfg)
+	}
+}
+
+func TestNewProviderFromConfig_UnknownProvider(t *testing.T) {
+	cfg := &Config{
+		Provider: "unknown",
+		APIKey:   "test-key",
+	}
+
+	provider, err := NewProviderFromConfig(cfg)
+	if err == nil {
+		t.Error("NewProviderFromConfig() expected error for unknown provider, got nil")
+	}
+	if !errors.Is(err, ErrUnknownProvider) {
+		t.Errorf("NewProviderFromConfig() error = %v, want ErrUnknownProvider", err)
+	}
+	if provider != nil {
+		t.Error("NewProviderFromConfig() should return nil provider for unknown provider")
 	}
 }
