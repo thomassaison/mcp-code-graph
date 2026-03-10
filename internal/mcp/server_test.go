@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -14,7 +15,6 @@ func TestServer_RegisterTools(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -50,7 +50,6 @@ func TestServer_SearchFunctionsTool(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -114,7 +113,6 @@ func TestServer_GetCallersTool(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -175,7 +173,6 @@ func TestServer_GetCalleesTool(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -231,7 +228,6 @@ func TestServer_RegisterResources(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -261,7 +257,6 @@ func TestServer_FunctionResource(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -311,7 +306,6 @@ func TestServer_PackageResource(t *testing.T) {
 	srv, err := NewServer(&Config{
 		DBPath:      t.TempDir() + "/test.db",
 		ProjectPath: ".",
-		LLMModel:    "",
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -351,4 +345,119 @@ func TestServer_PackageResource(t *testing.T) {
 	}
 
 	t.Logf("Package resource: %s", textResource.Text)
+}
+
+func TestServer_GetFunctionByNameTool(t *testing.T) {
+	srv, err := NewServer(&Config{
+		DBPath:      t.TempDir() + "/test.db",
+		ProjectPath: ".",
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	// Add test nodes - two functions named "Handle" in different packages
+	srv.graph.AddNode(&graph.Node{
+		ID:        "func_handler_Handle_test.go:10",
+		Name:      "Handle",
+		Package:   "handler",
+		Type:      graph.NodeTypeFunction,
+		Signature: "func Handle(ctx context.Context) error",
+		File:      "handler/test.go",
+		Line:      10,
+	})
+	srv.graph.AddNode(&graph.Node{
+		ID:        "func_service_Handle_test.go:20",
+		Name:      "Handle",
+		Package:   "service",
+		Type:      graph.NodeTypeFunction,
+		Signature: "func Handle(req *Request) (*Response, error)",
+		File:      "service/test.go",
+		Line:      20,
+	})
+
+	// Test 1: Find by name only - should return both
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "get_function_by_name"
+	req.Params.Arguments = map[string]interface{}{
+		"name": "Handle",
+	}
+
+	result, err := srv.handleGetFunctionByNameMCP(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleGetFunctionByNameMCP: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("no content in result")
+	}
+
+	textContent, ok := result.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result.Content[0])
+	}
+
+	// Should contain both functions
+	if !strings.Contains(textContent.Text, `"package": "handler"`) {
+		t.Fatal("expected handler package in result")
+	}
+	if !strings.Contains(textContent.Text, `"package": "service"`) {
+		t.Fatal("expected service package in result")
+	}
+
+	// Test 2: Find by name and package - should return one
+	req2 := mcp.CallToolRequest{}
+	req2.Params.Name = "get_function_by_name"
+	req2.Params.Arguments = map[string]interface{}{
+		"name":    "Handle",
+		"package": "service",
+	}
+
+	result2, err := srv.handleGetFunctionByNameMCP(context.Background(), req2)
+	if err != nil {
+		t.Fatalf("handleGetFunctionByNameMCP: %v", err)
+	}
+
+	textContent2, ok := result2.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result2.Content[0])
+	}
+
+	// Should only contain service package
+	if !strings.Contains(textContent2.Text, `"package": "service"`) {
+		t.Fatal("expected service package in result")
+	}
+	if strings.Contains(textContent2.Text, `"package": "handler"`) {
+		t.Fatal("should not contain handler package in result")
+	}
+
+	t.Logf("Result: %s", textContent2.Text)
+
+	// Test 3: Find by name and file - should return only service package function
+	req3 := mcp.CallToolRequest{}
+	req3.Params.Name = "get_function_by_name"
+	req3.Params.Arguments = map[string]interface{}{
+		"name": "Handle",
+		"file": "service",
+	}
+
+	result3, err := srv.handleGetFunctionByNameMCP(context.Background(), req3)
+	if err != nil {
+		t.Fatalf("handleGetFunctionByNameMCP: %v", err)
+	}
+
+	textContent3, ok := result3.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result3.Content[0])
+	}
+
+	// Should only contain service package
+	if !strings.Contains(textContent3.Text, `"package": "service"`) {
+		t.Fatal("expected service package in result")
+	}
+	if strings.Contains(textContent3.Text, `"package": "handler"`) {
+		t.Fatal("should not contain handler package in result when filtering by file")
+	}
+
+	t.Logf("Result: %s", textContent3.Text)
 }

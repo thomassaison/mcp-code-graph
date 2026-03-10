@@ -101,6 +101,29 @@ func (s *Server) GetTools() []Tool {
 			},
 			Handler: s.handleUpdateSummary,
 		},
+		{
+			Name:        "get_function_by_name",
+			Description: "Get functions by exact name, optionally filtered by package or file",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "The exact function name to search for",
+					},
+					"package": map[string]any{
+						"type":        "string",
+						"description": "Optional exact package name to filter by",
+					},
+					"file": map[string]any{
+						"type":        "string",
+						"description": "Optional file path substring to filter by",
+					},
+				},
+				"required": []string{"name"},
+			},
+			Handler: s.handleGetFunctionByName,
+		},
 	}
 }
 
@@ -318,6 +341,56 @@ func (s *Server) handleUpdateSummary(ctx context.Context, args map[string]any) (
 	return fmt.Sprintf("Updated summary for function %s", node.Name), nil
 }
 
+func (s *Server) handleGetFunctionByName(ctx context.Context, args map[string]any) (string, error) {
+	name, ok := args["name"].(string)
+	if !ok {
+		return "", fmt.Errorf("name must be a string")
+	}
+
+	pkg, _ := args["package"].(string)
+	file, _ := args["file"].(string)
+
+	var nodes []*graph.Node
+	if pkg != "" {
+		nodes = s.graph.GetNodesByNameAndPackage(name, pkg)
+	} else {
+		nodes = s.graph.GetNodesByName(name)
+	}
+
+	if file != "" {
+		var filtered []*graph.Node
+		for _, n := range nodes {
+			if strings.Contains(n.File, file) {
+				filtered = append(filtered, n)
+			}
+		}
+		nodes = filtered
+	}
+
+	results := make([]map[string]any, 0)
+	for _, n := range nodes {
+		if n.Type != graph.NodeTypeFunction && n.Type != graph.NodeTypeMethod {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id":        n.ID,
+			"name":      n.Name,
+			"package":   n.Package,
+			"signature": n.Signature,
+			"file":      n.File,
+			"line":      n.Line,
+			"docstring": n.Docstring,
+			"summary":   n.SummaryText(),
+		})
+	}
+
+	data, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // MCP handler methods (mcp-go compatible)
 
 func (s *Server) handleSearchFunctionsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -411,6 +484,31 @@ func (s *Server) handleUpdateSummaryMCP(ctx context.Context, req mcp.CallToolReq
 	}
 
 	result, err := s.handleUpdateSummary(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleGetFunctionByNameMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, err := req.RequireString("name")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := map[string]any{
+		"name": name,
+	}
+
+	if pkg, ok := req.GetArguments()["package"].(string); ok && pkg != "" {
+		args["package"] = pkg
+	}
+	if file, ok := req.GetArguments()["file"].(string); ok && file != "" {
+		args["file"] = file
+	}
+
+	result, err := s.handleGetFunctionByName(ctx, args)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

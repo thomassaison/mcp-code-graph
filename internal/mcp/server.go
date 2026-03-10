@@ -10,6 +10,7 @@ import (
 	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 	"github.com/thomassaison/mcp-code-graph/internal/indexer"
+	"github.com/thomassaison/mcp-code-graph/internal/llm"
 	goparser "github.com/thomassaison/mcp-code-graph/internal/parser/go"
 	"github.com/thomassaison/mcp-code-graph/internal/summary"
 	"github.com/thomassaison/mcp-code-graph/internal/vector"
@@ -18,8 +19,8 @@ import (
 type Config struct {
 	DBPath      string
 	ProjectPath string
-	LLMModel    string
 	Embedding   *embedding.Config
+	LLM         *llm.Config
 }
 
 type Server struct {
@@ -31,6 +32,7 @@ type Server struct {
 	parser            *goparser.GoParser
 	config            *Config
 	embeddingProvider embedding.EmbeddingProvider
+	llmProvider       llm.LLMProvider
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -45,13 +47,15 @@ func NewServer(cfg *Config) (*Server, error) {
 	idx := indexer.New(gr, p)
 	persister := graph.NewPersister(cfg.DBPath + ".graph.db")
 
-	var gen *summary.Generator
-	if cfg.LLMModel != "" {
-		gen = summary.NewGenerator(&summary.MockProvider{}, cfg.LLMModel)
-	} else {
-		gen = summary.NewGenerator(&summary.MockProvider{}, "mock")
+	// Create LLM provider (falls back to MockProvider if not configured)
+	llmProvider, err := llm.NewProviderFromConfig(cfg.LLM)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM provider: %w", err)
 	}
 
+	gen := summary.NewGenerator(llmProvider, "")
+
+	// Create embedding provider (nil if not configured)
 	var embProvider embedding.EmbeddingProvider
 	if cfg.Embedding != nil {
 		embProvider, err = embedding.NewProviderFromConfig(cfg.Embedding)
@@ -69,6 +73,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		parser:            p,
 		config:            cfg,
 		embeddingProvider: embProvider,
+		llmProvider:       llmProvider,
 	}, nil
 }
 
@@ -104,6 +109,7 @@ func (s *Server) RegisterTools(mcpServer *mcpserver.MCPServer) {
 	s.addGetCalleesTool(mcpServer)
 	s.addReindexProjectTool(mcpServer)
 	s.addUpdateSummaryTool(mcpServer)
+	s.addGetFunctionByNameTool(mcpServer)
 }
 
 // RegisterResources registers all MCP resources with the given server.
@@ -189,6 +195,23 @@ func (s *Server) addUpdateSummaryTool(mcpServer *mcpserver.MCPServer) {
 		),
 	)
 	mcpServer.AddTool(tool, s.handleUpdateSummaryMCP)
+}
+
+func (s *Server) addGetFunctionByNameTool(mcpServer *mcpserver.MCPServer) {
+	tool := mcp.NewTool("get_function_by_name",
+		mcp.WithDescription("Get functions by exact name, optionally filtered by package or file"),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("The exact function name to search for"),
+		),
+		mcp.WithString("package",
+			mcp.Description("Optional package name to filter by"),
+		),
+		mcp.WithString("file",
+			mcp.Description("Optional file path substring to filter by"),
+		),
+	)
+	mcpServer.AddTool(tool, s.handleGetFunctionByNameMCP)
 }
 
 // Start is deprecated. Use IndexProject() followed by MCP server.ServeStdio() instead.
