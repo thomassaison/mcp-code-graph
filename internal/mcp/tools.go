@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
@@ -113,10 +115,13 @@ func (s *Server) handleSearchFunctions(ctx context.Context, args map[string]any)
 		limit = int(l)
 	}
 
+	slog.Debug("search functions", "query", query, "limit", limit)
 	if s.embeddingProvider != nil {
+		slog.Debug("using semantic search")
 		return s.semanticSearch(ctx, query, limit)
 	}
 
+	slog.Debug("using name search")
 	return s.nameSearch(query, limit)
 }
 
@@ -126,6 +131,7 @@ func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (s
 		log.Printf("warning: failed to embed query, falling back to name search: %v", err)
 		return s.nameSearch(query, limit)
 	}
+	slog.Debug("query embedded", "dim", len(queryEmbedding))
 
 	functions := s.graph.GetNodesByType(graph.NodeTypeFunction)
 	for _, fn := range functions {
@@ -139,6 +145,7 @@ func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (s
 		log.Printf("warning: vector search failed, falling back to name search: %v", err)
 		return s.nameSearch(query, limit)
 	}
+	slog.Debug("vector search complete", "results", len(results))
 
 	var output []map[string]any
 	for _, r := range results {
@@ -164,6 +171,7 @@ func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (s
 }
 
 func (s *Server) ensureFunctionEmbedding(ctx context.Context, node *graph.Node) error {
+	slog.Log(ctx, debug.LevelTrace, "ensuring function embedding", "function", node.Name)
 	if node.Summary == nil || node.Summary.Text == "" {
 		if err := s.summary.Generate(ctx, node); err != nil {
 			return fmt.Errorf("generate summary: %w", err)
