@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Code Graph Explorer</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>Code Graph Explorer</h1>
+        <div id="search-container">
+            <input type="search" id="search" placeholder="Search nodes..." autocomplete="off">
+            <div id="search-results"></div>
+        </div>
+    </header>
+    <main>
+        <aside id="tree">
+            <h2>Packages</h2>
+            <div id="package-tree"></div>
+        </aside>
+        <section id="content">
+            <div id="graph-container">
+                <div id="graph"></div>
+                <div id="depth-control">
+                    <label for="depth">Depth:</label>
+                    <select id="depth">
+                        <option value="1" selected>1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+            </div>
+            <div id="metadata">
+                <h2>Node Details</h2>
+                <div id="node-info">Select a node to view details</div>
+            </div>
+        </section>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>
