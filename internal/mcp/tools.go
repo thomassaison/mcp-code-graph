@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/math"
 )
 
 type Tool struct {
@@ -594,7 +594,7 @@ func (s *Server) semanticBehaviorSearch(ctx context.Context, query string, nodes
 			continue
 		}
 
-		score := cosineSimilarity(queryEmbedding, nodeEmbedding)
+		score := math.CosineSimilarity(queryEmbedding, nodeEmbedding)
 		scoredNodes = append(scoredNodes, scoredNode{node: node, score: score})
 	}
 
@@ -642,23 +642,6 @@ func (s *Server) formatBehaviorResults(nodes []*graph.Node, limit int) string {
 
 	resultJSON, _ := json.MarshalIndent(results, "", "  ")
 	return string(resultJSON)
-}
-
-func cosineSimilarity(a, b []float32) float32 {
-	var dotProduct, normA, normB float32
-	for i := range a {
-		dotProduct += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-	return dotProduct / (sqrt32(normA) * sqrt32(normB))
-}
-
-func sqrt32(x float32) float32 {
-	return float32(math.Sqrt(float64(x)))
 }
 
 // MCP handler methods (mcp-go compatible)

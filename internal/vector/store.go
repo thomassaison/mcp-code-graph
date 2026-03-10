@@ -3,9 +3,10 @@ package vector
 import (
 	"database/sql"
 	"fmt"
-	"math"
+	stdmath "math"
 	"sort"
 
+	"github.com/thomassaison/mcp-code-graph/internal/math"
 	_ "modernc.org/sqlite"
 )
 
@@ -58,7 +59,7 @@ func (s *Store) initTables() error {
 func (s *Store) Insert(nodeID, text string, embedding []float32) error {
 	embeddingBytes := make([]byte, len(embedding)*4)
 	for i, v := range embedding {
-		bits := math.Float32bits(v)
+		bits := stdmath.Float32bits(v)
 		embeddingBytes[i*4] = byte(bits)
 		embeddingBytes[i*4+1] = byte(bits >> 8)
 		embeddingBytes[i*4+2] = byte(bits >> 16)
@@ -93,10 +94,10 @@ func (s *Store) Search(query []float32, limit int) ([]SearchResult, error) {
 				uint32(embeddingBytes[i*4+1])<<8 |
 				uint32(embeddingBytes[i*4+2])<<16 |
 				uint32(embeddingBytes[i*4+3])<<24
-			embedding[i] = math.Float32frombits(bits)
+			embedding[i] = stdmath.Float32frombits(bits)
 		}
 
-		score := cosineSimilarity(query, embedding)
+		score := math.CosineSimilarity(query, embedding)
 		results = append(results, SearchResult{
 			NodeID: nodeID,
 			Text:   text,
@@ -134,32 +135,8 @@ func (s *Store) GetEmbedding(nodeID string) ([]float32, error) {
 			uint32(embeddingBytes[i*4+1])<<8 |
 			uint32(embeddingBytes[i*4+2])<<16 |
 			uint32(embeddingBytes[i*4+3])<<24
-		embedding[i] = math.Float32frombits(bits)
+		embedding[i] = stdmath.Float32frombits(bits)
 	}
 
 	return embedding, nil
-}
-
-func cosineSimilarity(a, b []float32) float32 {
-	if len(a) != len(b) {
-		return 0
-	}
-	var dot, normA, normB float32
-	for i := range a {
-		dot += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-	return dot / (sqrt32(normA) * sqrt32(normB))
-}
-
-func sqrt32(x float32) float32 {
-	z := x
-	for i := 0; i < 10; i++ {
-		z = z - (z*z-x)/(2*z)
-	}
-	return z
 }
