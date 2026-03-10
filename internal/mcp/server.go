@@ -7,6 +7,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
 	"github.com/thomas-saison/mcp-code-graph/internal/graph"
 	"github.com/thomas-saison/mcp-code-graph/internal/indexer"
 	goparser "github.com/thomas-saison/mcp-code-graph/internal/parser/go"
@@ -18,6 +19,7 @@ type Config struct {
 	DBPath      string
 	ProjectPath string
 	LLMModel    string
+	Embedding   *embedding.Config
 }
 
 type Server struct {
@@ -28,6 +30,7 @@ type Server struct {
 	persister *graph.Persister
 	parser    *goparser.GoParser
 	config    *Config
+	embedding embedding.EmbeddingProvider
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -49,6 +52,14 @@ func NewServer(cfg *Config) (*Server, error) {
 		gen = summary.NewGenerator(&summary.MockProvider{}, "mock")
 	}
 
+	var embProvider embedding.EmbeddingProvider
+	if cfg.Embedding != nil {
+		embProvider, err = embedding.NewProviderFromConfig(cfg.Embedding)
+		if err != nil {
+			return nil, fmt.Errorf("create embedding provider: %w", err)
+		}
+	}
+
 	return &Server{
 		graph:     gr,
 		vector:    vecStore,
@@ -57,6 +68,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		persister: persister,
 		parser:    p,
 		config:    cfg,
+		embedding: embProvider,
 	}, nil
 }
 
