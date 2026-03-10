@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/thomassaison/mcp-code-graph/internal/behavior"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 	"github.com/thomassaison/mcp-code-graph/internal/parser"
@@ -12,14 +13,23 @@ import (
 )
 
 type Indexer struct {
-	graph  *graph.Graph
-	parser parser.Parser
+	graph            *graph.Graph
+	parser           parser.Parser
+	behaviorAnalyzer behavior.Analyzer
 }
 
 func New(g *graph.Graph, p parser.Parser) *Indexer {
 	return &Indexer{
 		graph:  g,
 		parser: p,
+	}
+}
+
+func NewWithBehaviorAnalyzer(g *graph.Graph, p parser.Parser, analyzer behavior.Analyzer) *Indexer {
+	return &Indexer{
+		graph:            g,
+		parser:           p,
+		behaviorAnalyzer: analyzer,
 	}
 }
 
@@ -48,27 +58,62 @@ func (idx *Indexer) IndexModule(root string) error {
 		idx.graph.AddEdge(edge)
 	}
 
-	// Run type checker for interface resolution
 	checker := types.NewChecker()
 	typeResult, err := checker.Check(root)
 	if err != nil {
 		slog.Warn("type check failed, continuing without interface data", "error", err)
 	} else {
-		// Add interface and type nodes
 		for _, node := range typeResult.Interfaces {
 			idx.graph.AddNode(node)
 		}
 		for _, node := range typeResult.Types {
 			idx.graph.AddNode(node)
 		}
-		// Add implementation edges
 		for _, edge := range typeResult.Edges {
 			idx.graph.AddEdge(edge)
 		}
 	}
 
+	idx.analyzeBehaviors(context.Background(), result.Nodes)
+
 	slog.Debug("indexing module complete", "nodes", len(result.Nodes), "edges", len(result.Edges))
 	return nil
+}
+
+func (idx *Indexer) analyzeBehaviors(ctx context.Context, nodes []*graph.Node) {
+	if idx.behaviorAnalyzer == nil {
+		return
+	}
+
+	for _, node := range nodes {
+		if node.Type != graph.NodeTypeFunction && node.Type != graph.NodeTypeMethod {
+			continue
+		}
+
+		req := behavior.AnalysisRequest{
+			PackageName:  node.Package,
+			FunctionName: node.Name,
+			Signature:    node.Signature,
+			Docstring:    node.Docstring,
+		}
+
+		if codeRaw, ok := node.Metadata["code"]; ok {
+			if code, ok := codeRaw.(string); ok {
+				req.Code = code
+			}
+		}
+
+		behaviors, err := idx.behaviorAnalyzer.Analyze(ctx, req)
+		if err != nil {
+			slog.Debug("behavior analysis failed", "function", node.Name, "error", err)
+			continue
+		}
+
+		if node.Metadata == nil {
+			node.Metadata = make(map[string]any)
+		}
+		node.Metadata["behaviors"] = behaviors
+	}
 }
 
 func (idx *Indexer) IndexPackage(dir string) error {
