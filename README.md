@@ -9,6 +9,7 @@ An MCP (Model Context Protocol) server that provides a code graph database for A
 - **Semantic Search**: Search functions by purpose using vector embeddings
 - **LLM Summaries**: Auto-generated function summaries with human-editable overrides
 - **Incremental Indexing**: File watcher + manual full reindex
+- **Web Visualization**: Interactive graph explorer in the browser (opt-in)
 
 ## Installation
 
@@ -48,6 +49,7 @@ None. All configuration is via environment variables.
 ### Environment Variables
 
 - `MCP_CODE_GRAPH_DIR` - Override database directory (default: `<project>/.mcp-code-graph`)
+- `MCP_CODE_GRAPH_WEB` - Enable web visualization server (e.g., `:8080`)
 - `EMBEDDING_CONFIG` - JSON config for semantic search embeddings (see below)
 - `LLM_CONFIG` - JSON config for function summaries (see below)
 

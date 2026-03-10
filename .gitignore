@@ -3,3 +3,5 @@ bin/
 *.test
 *.out
 .worktrees/
+mcp-code-graph
+logs.txt
