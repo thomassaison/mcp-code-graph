@@ -43,12 +43,75 @@ The server automatically:
 
 ### Command Line Options
 
-- `--model` - LLM model for summaries (empty = mock provider)
+None. All configuration is via environment variables.
 
 ### Environment Variables
 
 - `MCP_CODE_GRAPH_DIR` - Override database directory (default: `<project>/.mcp-code-graph`)
 - `EMBEDDING_CONFIG` - JSON config for semantic search embeddings (see below)
+- `LLM_CONFIG` - JSON config for function summaries (see below)
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "Client (Claude Code, OpenCode, etc.)"
+        A[AI Assistant]
+    end
+    
+    subgraph "MCP Server (mcp-code-graph)"
+        B[MCP Protocol Handler]
+        C[Tools]
+        D[Resources]
+        
+        subgraph "Core Components"
+            E[Go Parser]
+            F[Code Graph]
+            G[Vector Store]
+            H[Summary Generator]
+        end
+    end
+    
+    subgraph "External Services"
+        I[(Embedding Provider<br/>OpenAI/Ollama/vLLM)]
+        J[(LLM Provider<br/>OpenAI/Ollama/vLLM)]
+    end
+    
+    subgraph "Storage"
+        K[(Graph DB<br/>.mcp-code-graph/)]
+        L[(Vector DB<br/>.mcp-code-graph/)]
+    end
+    
+    A -->|MCP Protocol| B
+    B --> C
+    B --> D
+    
+    C -->|search_functions| G
+    C -->|get_callers/get_callees| F
+    C -->|reindex_project| E
+    C -->|update_summary| F
+    
+    D -->|function://package/name| F
+    D -->|package://name| F
+    
+    E -->|parse Go files| F
+    F -->|persist| K
+    G -->|persist| L
+    
+    G -->|embed query| I
+    H -->|generate summaries| J
+    
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style F fill:#f3e5f5
+    style G fill:#e8f5e9
+    style H fill:#fce4ec
+```
+
+**Data Flow:**
+1. **Indexing**: Go Parser extracts functions/types → Code Graph stores relationships → persisted to Graph DB
+2. **Semantic Search**: Query → Vector Store → Embedding Provider → similarity match → function results
+3. **Summaries**: Summary Generator → LLM Provider → function summaries (on-demand)
 
 ### Semantic Search Configuration
 
@@ -71,6 +134,27 @@ export EMBEDDING_CONFIG='{"provider":"openai","base_url":"http://localhost:8000/
 
 Without `EMBEDDING_CONFIG`, search falls back to name matching only.
 
+### LLM Configuration
+
+Configure LLM provider for function summaries via `LLM_CONFIG`:
+
+**OpenAI:**
+```bash
+export LLM_CONFIG='{"provider":"openai","api_key":"sk-...","model":"gpt-4o-mini"}'
+```
+
+**Ollama (local):**
+```bash
+export LLM_CONFIG='{"provider":"openai","base_url":"http://localhost:11434/v1","model":"llama3.2"}'
+```
+
+**vLLM / other OpenAI-compatible:**
+```bash
+export LLM_CONFIG='{"provider":"openai","base_url":"http://localhost:8000/v1","model":"your-model","api_key":"optional"}'
+```
+
+Without `LLM_CONFIG`, summaries use a mock provider that returns placeholder text.
+
 ## Client Integration
 
 ### OpenCode
@@ -89,7 +173,7 @@ Add to `~/.config/opencode/opencode.json`:
 }
 ```
 
-With semantic search (Ollama):
+With semantic search and summaries (Ollama):
 
 ```json
 {
@@ -99,7 +183,8 @@ With semantic search (Ollama):
       "command": ["go", "run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"],
       "enabled": true,
       "environment": {
-        "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"base_url\":\"http://localhost:11434/v1\",\"model\":\"nomic-embed-text\"}"
+        "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"base_url\":\"http://localhost:11434/v1\",\"model\":\"nomic-embed-text\"}",
+        "LLM_CONFIG": "{\"provider\":\"openai\",\"base_url\":\"http://localhost:11434/v1\",\"model\":\"llama3.2\"}"
       }
     }
   }
@@ -121,7 +206,7 @@ Add to your project's `.claude/settings.json` or `~/.claude/settings.json`:
 }
 ```
 
-With semantic search:
+With semantic search and summaries:
 
 ```json
 {
@@ -130,7 +215,8 @@ With semantic search:
       "command": "go",
       "args": ["run", "github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest"],
       "env": {
-        "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"api_key\":\"sk-...\",\"model\":\"text-embedding-3-small\"}"
+        "EMBEDDING_CONFIG": "{\"provider\":\"openai\",\"api_key\":\"sk-...\",\"model\":\"text-embedding-3-small\"}",
+        "LLM_CONFIG": "{\"provider\":\"openai\",\"api_key\":\"sk-...\",\"model\":\"gpt-4o-mini\"}"
       }
     }
   }
@@ -174,6 +260,7 @@ Add to your project's `.gitignore`:
 | `get_callees` | Get all functions called by this function |
 | `reindex_project` | Trigger full reindex |
 | `update_summary` | Update a function's summary |
+| `get_function_by_name` | Find functions by exact name |
 
 ## MCP Resources
 
