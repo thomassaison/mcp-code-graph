@@ -3,6 +3,7 @@ package graph
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 
 	_ "modernc.org/sqlite"
 )
@@ -19,6 +20,7 @@ func NewPersister(dbPath string) *Persister {
 }
 
 func (p *Persister) Save(g *Graph) error {
+	slog.Debug("graph save started", "db", p.dbPath)
 	var err error
 	p.db, err = sql.Open("sqlite", p.dbPath)
 	if err != nil {
@@ -119,10 +121,12 @@ func (p *Persister) Save(g *Graph) error {
 		}
 	}
 
+	slog.Debug("graph save complete", "nodes", len(g.nodes), "db", p.dbPath)
 	return tx.Commit()
 }
 
 func (p *Persister) Load(g *Graph) error {
+	slog.Debug("graph load started", "db", p.dbPath)
 	var err error
 	p.db, err = sql.Open("sqlite", p.dbPath)
 	if err != nil {
@@ -192,5 +196,6 @@ func (p *Persister) Load(g *Graph) error {
 		g.AddEdge(edge)
 	}
 
+	slog.Debug("graph load complete", "db", p.dbPath)
 	return nil
 }
