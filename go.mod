@@ -1,4 +1,4 @@
-module github.com/thomas-saison/mcp-code-graph
+module github.com/thomassaison/mcp-code-graph
 
 go 1.26.1
 

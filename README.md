@@ -13,7 +13,7 @@ An MCP (Model Context Protocol) server that provides a code graph database for A
 ## Installation
 
 ```bash
-go install github.com/thomas-saison/mcp-code-graph/cmd/mcp-code-graph@latest
+go install github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest
 ```
 
 ## Usage

@@ -20,7 +20,7 @@
 
 **Step 1: Initialize module**
 
-Run: `go mod init github.com/thomas-saison/mcp-code-graph`
+Run: `go mod init github.com/thomassaison/mcp-code-graph`
 
 **Step 2: Add core dependencies**
 
@@ -1117,7 +1117,7 @@ git commit -m "feat(vector): add vector store with sqlite backend"
 // internal/parser/parser.go
 package parser
 
-import "github.com/thomas-saison/mcp-code-graph/internal/graph"
+import "github.com/thomassaison/mcp-code-graph/internal/graph"
 
 // ParseResult contains the parsed code graph
 type ParseResult struct {
@@ -1239,8 +1239,8 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	"github.com/thomas-saison/mcp-code-graph/internal/parser"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/parser"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -1470,8 +1470,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	goparser "github.com/thomas-saison/mcp-code-graph/internal/parser/go"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	goparser "github.com/thomassaison/mcp-code-graph/internal/parser/go"
 )
 
 func TestIndexModule(t *testing.T) {
@@ -1523,8 +1523,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	"github.com/thomas-saison/mcp-code-graph/internal/parser"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/parser"
 )
 
 // Indexer coordinates parsing and graph building
@@ -1832,7 +1832,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 // Generator generates summaries for functions
@@ -1902,7 +1902,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 func TestGenerator(t *testing.T) {
@@ -1964,11 +1964,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	"github.com/thomas-saison/mcp-code-graph/internal/indexer"
-	"github.com/thomas-saison/mcp-code-graph/internal/parser"
-	"github.com/thomas-saison/mcp-code-graph/internal/summary"
-	"github.com/thomas-saison/mcp-code-graph/internal/vector"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/indexer"
+	"github.com/thomassaison/mcp-code-graph/internal/parser"
+	"github.com/thomassaison/mcp-code-graph/internal/summary"
+	"github.com/thomassaison/mcp-code-graph/internal/vector"
 )
 
 // Server is the MCP code graph server
@@ -2453,7 +2453,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/mcp"
+	"github.com/thomassaison/mcp-code-graph/internal/mcp"
 )
 
 func main() {
@@ -2559,7 +2559,7 @@ An MCP (Model Context Protocol) server that provides a code graph database for A
 ## Installation
 
 ```bash
-go install github.com/thomas-saison/mcp-code-graph/cmd/mcp-code-graph@latest
+go install github.com/thomassaison/mcp-code-graph/cmd/mcp-code-graph@latest
 ```
 
 ## Usage

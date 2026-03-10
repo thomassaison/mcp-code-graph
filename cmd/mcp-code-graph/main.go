@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
-	"github.com/thomas-saison/mcp-code-graph/internal/mcp"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/mcp"
 )
 
 // version is injected at build time via ldflags

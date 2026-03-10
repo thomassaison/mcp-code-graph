@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 func TestGenerator(t *testing.T) {

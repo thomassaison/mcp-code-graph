@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	goparser "github.com/thomas-saison/mcp-code-graph/internal/parser/go"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	goparser "github.com/thomassaison/mcp-code-graph/internal/parser/go"
 )
 
 func TestIndexFile(t *testing.T) {

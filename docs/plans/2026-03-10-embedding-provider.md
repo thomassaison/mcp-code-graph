@@ -487,7 +487,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 )
 
 func TestServer_WithEmbedding(t *testing.T) {
@@ -542,7 +542,7 @@ Expected: FAIL - Config has no Embedding field
 // Add import:
 import (
 	...
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 )
 
 // Update Config struct:
@@ -635,7 +635,7 @@ git commit -m "feat(mcp): add embedding provider to Server"
 // Add import:
 import (
 	...
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 )
 
 // Update main function to read EMBEDDING_CONFIG env var:

@@ -3,7 +3,7 @@ package mcp
 import (
 	"testing"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 )
 
 func TestServer_WithEmbedding(t *testing.T) {

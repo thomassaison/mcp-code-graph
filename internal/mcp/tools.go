@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 type Tool struct {

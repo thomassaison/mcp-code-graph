@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 type Generator struct {

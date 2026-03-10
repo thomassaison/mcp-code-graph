@@ -6,7 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 func TestServer_RegisterTools(t *testing.T) {

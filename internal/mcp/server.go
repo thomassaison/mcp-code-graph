@@ -7,12 +7,12 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	"github.com/thomas-saison/mcp-code-graph/internal/indexer"
-	goparser "github.com/thomas-saison/mcp-code-graph/internal/parser/go"
-	"github.com/thomas-saison/mcp-code-graph/internal/summary"
-	"github.com/thomas-saison/mcp-code-graph/internal/vector"
+	"github.com/thomassaison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/indexer"
+	goparser "github.com/thomassaison/mcp-code-graph/internal/parser/go"
+	"github.com/thomassaison/mcp-code-graph/internal/summary"
+	"github.com/thomassaison/mcp-code-graph/internal/vector"
 )
 
 type Config struct {

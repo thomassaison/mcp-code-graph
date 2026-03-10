@@ -7,8 +7,8 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/thomas-saison/mcp-code-graph/internal/graph"
-	"github.com/thomas-saison/mcp-code-graph/internal/parser"
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
+	"github.com/thomassaison/mcp-code-graph/internal/parser"
 	"golang.org/x/tools/go/packages"
 )
 
