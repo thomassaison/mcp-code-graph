@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"sort"
 	"testing"
 )
 
@@ -378,5 +379,46 @@ func TestGraph_GetNodesByBehaviors(t *testing.T) {
 				t.Errorf("GetNodesByBehaviors() returned %d nodes, want %d", len(nodes), tt.wantCount)
 			}
 		})
+	}
+}
+
+func TestAllPackages(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "func1", Type: NodeTypeFunction, Package: "pkg1", Name: "Func1"})
+	g.AddNode(&Node{ID: "func2", Type: NodeTypeFunction, Package: "pkg2", Name: "Func2"})
+	g.AddNode(&Node{ID: "func3", Type: NodeTypeFunction, Package: "pkg1", Name: "Func3"})
+
+	pkgs := g.AllPackages()
+	sort.Strings(pkgs)
+	if len(pkgs) != 2 {
+		t.Errorf("AllPackages() = %d packages, want 2", len(pkgs))
+	}
+	if pkgs[0] != "pkg1" || pkgs[1] != "pkg2" {
+		t.Errorf("AllPackages() = %v, want [pkg1, pkg2]", pkgs)
+	}
+}
+
+func TestGetNeighborhood(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "a", Type: NodeTypeFunction, Package: "pkg", Name: "A"})
+	g.AddNode(&Node{ID: "b", Type: NodeTypeFunction, Package: "pkg", Name: "B"})
+	g.AddNode(&Node{ID: "c", Type: NodeTypeFunction, Package: "pkg", Name: "C"})
+	g.AddEdge(&Edge{From: "a", To: "b", Type: EdgeTypeCalls})
+	g.AddEdge(&Edge{From: "b", To: "c", Type: EdgeTypeCalls})
+
+	nodes, edges := g.GetNeighborhood("b", 1)
+	if len(nodes) != 3 {
+		t.Errorf("GetNeighborhood(b, 1) nodes = %d, want 3", len(nodes))
+	}
+	if len(edges) != 2 {
+		t.Errorf("GetNeighborhood(b, 1) edges = %d, want 2", len(edges))
+	}
+
+	nodes, edges = g.GetNeighborhood("b", 2)
+	if len(nodes) != 3 {
+		t.Errorf("GetNeighborhood(b, 2) nodes = %d, want 3", len(nodes))
+	}
+	if len(edges) != 2 {
+		t.Errorf("GetNeighborhood(b, 2) edges = %d, want 2", len(edges))
 	}
 }

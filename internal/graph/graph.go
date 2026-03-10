@@ -263,6 +263,69 @@ func (g *Graph) AllNodes() []*Node {
 	return nodes
 }
 
+func (g *Graph) AllPackages() []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	pkgs := make(map[string]bool)
+	for pkg := range g.byPackage {
+		pkgs[pkg] = true
+	}
+
+	result := make([]string, 0, len(pkgs))
+	for pkg := range pkgs {
+		result = append(result, pkg)
+	}
+	return result
+}
+
+func (g *Graph) GetNeighborhood(nodeID string, depth int) ([]*Node, []*Edge) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	visited := make(map[string]bool)
+	nodes := make(map[string]*Node)
+	edges := make(map[string]*Edge)
+
+	var visit func(id string, d int)
+	visit = func(id string, d int) {
+		if d < 0 || visited[id] {
+			return
+		}
+		visited[id] = true
+
+		if node, ok := g.nodes[id]; ok {
+			nodes[id] = node
+		}
+
+		for _, edge := range g.edges[id] {
+			edgeKey := edge.From + "->" + edge.To
+			edges[edgeKey] = edge
+			visit(edge.To, d-1)
+		}
+
+		for _, edge := range g.inEdges[id] {
+			edgeKey := edge.From + "->" + edge.To
+			edges[edgeKey] = edge
+			visit(edge.From, d-1)
+		}
+	}
+
+	visit(nodeID, depth)
+
+	result := make([]*Node, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, node)
+	}
+
+	edgeResult := make([]*Edge, 0, len(edges))
+	for _, edge := range edges {
+		edgeResult = append(edgeResult, edge)
+	}
+
+	return result, edgeResult
+}
+
 func (g *Graph) GetImplementors(interfaceID string) []*Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
