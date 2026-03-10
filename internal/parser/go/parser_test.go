@@ -55,3 +55,66 @@ func main() {
 		t.Error("no edges found")
 	}
 }
+
+func TestParsePackage_FullImportPaths(t *testing.T) {
+	// Create a minimal Go module with a non-main package
+	tmpDir := t.TempDir()
+
+	// go.mod
+	goMod := `module example.com/testmod
+
+go 1.21
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a sub-package
+	pkgDir := filepath.Join(tmpDir, "mypkg")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	code := `package mypkg
+
+// Hello returns a greeting.
+func Hello() string {
+	return "hello"
+}
+
+func helper() string {
+	return Hello()
+}
+`
+	if err := os.WriteFile(filepath.Join(pkgDir, "hello.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New()
+	result, err := p.ParsePackage(tmpDir)
+	if err != nil {
+		t.Fatalf("ParsePackage() error = %v", err)
+	}
+
+	if len(result.Nodes) < 2 {
+		t.Fatalf("expected at least 2 nodes, got %d", len(result.Nodes))
+	}
+
+	// All nodes should use the full import path, not the short "mypkg"
+	for _, node := range result.Nodes {
+		if node.Package != "example.com/testmod/mypkg" {
+			t.Errorf("node %q has Package=%q, want %q", node.Name, node.Package, "example.com/testmod/mypkg")
+		}
+		// IDs should also contain the full path
+		if node.ID == "" {
+			t.Errorf("node %q has empty ID", node.Name)
+		}
+	}
+
+	// Edges should reference the full import path in placeholder resolution
+	for _, edge := range result.Edges {
+		if edge.From == "" || edge.To == "" {
+			t.Errorf("edge has empty From=%q or To=%q", edge.From, edge.To)
+		}
+	}
+}

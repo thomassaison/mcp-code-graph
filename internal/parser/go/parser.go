@@ -98,12 +98,45 @@ func (p *GoParser) ParsePackage(dir string) (*parser.ParseResult, error) {
 
 	result := &parser.ParseResult{}
 	for _, pkg := range pkgs {
+		shortName := pkg.Name
+		fullPath := pkg.PkgPath
+
 		for _, file := range pkg.Syntax {
 			pos := p.fset.Position(file.Pos())
 			fileResult, err := p.ParseFile(pos.Filename)
 			if err != nil {
 				continue
 			}
+
+			// Rewrite short package names to full import paths so that
+			// function nodes match the convention used by the type checker.
+			if shortName != fullPath {
+				oldPlaceholderPrefix := fmt.Sprintf("func_%s_", shortName)
+				newPlaceholderPrefix := fmt.Sprintf("func_%s_", fullPath)
+
+				// Build old-ID -> new-ID mapping for edge rewriting
+				idMap := make(map[string]string, len(fileResult.Nodes))
+				for _, node := range fileResult.Nodes {
+					oldID := node.ID
+					node.Package = fullPath
+					node.ID = node.GenerateID()
+					idMap[oldID] = node.ID
+				}
+
+				for _, edge := range fileResult.Edges {
+					if newID, ok := idMap[edge.From]; ok {
+						edge.From = newID
+					}
+					// Rewrite placeholder targets (func_<shortName>_X -> func_<fullPath>_X)
+					if strings.HasPrefix(edge.To, oldPlaceholderPrefix) {
+						edge.To = newPlaceholderPrefix + strings.TrimPrefix(edge.To, oldPlaceholderPrefix)
+					}
+					if newID, ok := idMap[edge.To]; ok {
+						edge.To = newID
+					}
+				}
+			}
+
 			result.Nodes = append(result.Nodes, fileResult.Nodes...)
 			result.Edges = append(result.Edges, fileResult.Edges...)
 		}
