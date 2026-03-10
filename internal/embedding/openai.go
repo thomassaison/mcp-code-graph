@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
+// OpenAIProvider implements EmbeddingProvider using the OpenAI embeddings API.
+// It is compatible with any OpenAI-compatible endpoint via BaseURL.
 type OpenAIProvider struct {
 	apiKey  string
 	model   string
@@ -17,8 +20,10 @@ type OpenAIProvider struct {
 	client  *http.Client
 }
 
+// NewOpenAIProvider creates a new OpenAIProvider from the given config.
+// If cfg.BaseURL is empty, it defaults to the OpenAI API endpoint.
 func NewOpenAIProvider(cfg *Config) (*OpenAIProvider, error) {
-	baseURL := cfg.BaseURL
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -31,11 +36,6 @@ func NewOpenAIProvider(cfg *Config) (*OpenAIProvider, error) {
 			Timeout: 30 * time.Second,
 		},
 	}, nil
-}
-
-type embeddingRequest struct {
-	Input string `json:"input"`
-	Model string `json:"model"`
 }
 
 type embeddingResponse struct {
@@ -85,6 +85,11 @@ func (p *OpenAIProvider) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
 	return p.parseResponse(resp.Body, len(texts))
 }
 
@@ -102,9 +107,13 @@ func (p *OpenAIProvider) parseResponse(body io.Reader, expectedCount int) ([][]f
 		return nil, fmt.Errorf("no embeddings in response")
 	}
 
+	if len(resp.Data) != expectedCount {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", expectedCount, len(resp.Data))
+	}
+
 	embeddings := make([][]float32, len(resp.Data))
 	for _, item := range resp.Data {
-		if item.Index >= len(embeddings) {
+		if item.Index < 0 || item.Index >= len(embeddings) {
 			return nil, fmt.Errorf("invalid index %d", item.Index)
 		}
 		embeddings[item.Index] = item.Embedding
