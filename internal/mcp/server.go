@@ -110,6 +110,7 @@ func (s *Server) RegisterTools(mcpServer *mcpserver.MCPServer) {
 	s.addReindexProjectTool(mcpServer)
 	s.addUpdateSummaryTool(mcpServer)
 	s.addGetFunctionByNameTool(mcpServer)
+	s.addGetImplementorsTool(mcpServer)
 }
 
 // RegisterResources registers all MCP resources with the given server.
@@ -212,6 +213,20 @@ func (s *Server) addGetFunctionByNameTool(mcpServer *mcpserver.MCPServer) {
 		),
 	)
 	mcpServer.AddTool(tool, s.handleGetFunctionByNameMCP)
+}
+
+func (s *Server) addGetImplementorsTool(mcpServer *mcpserver.MCPServer) {
+	tool := mcp.NewTool("get_implementors",
+		mcp.WithDescription("Find all types that implement a given interface"),
+		mcp.WithString("interface_id",
+			mcp.Required(),
+			mcp.Description("Interface to query (e.g., io.Reader)"),
+		),
+		mcp.WithBoolean("include_pointer",
+			mcp.Description("Include pointer variants (default: true)"),
+		),
+	)
+	mcpServer.AddTool(tool, s.handleGetImplementorsMCP)
 }
 
 // Start is deprecated. Use IndexProject() followed by MCP server.ServeStdio() instead.

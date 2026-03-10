@@ -124,6 +124,21 @@ func (s *Server) GetTools() []Tool {
 			},
 			Handler: s.handleGetFunctionByName,
 		},
+		{
+			Name:        "get_implementors",
+			Description: "Find all types that implement a given interface",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"interface_id": map[string]any{
+						"type":        "string",
+						"description": "The ID of the interface",
+					},
+				},
+				"required": []string{"interface_id"},
+			},
+			Handler: s.handleGetImplementors,
+		},
 	}
 }
 
@@ -391,6 +406,47 @@ func (s *Server) handleGetFunctionByName(ctx context.Context, args map[string]an
 	return string(data), nil
 }
 
+func (s *Server) handleGetImplementors(ctx context.Context, args map[string]any) (string, error) {
+	interfaceID, ok := args["interface_id"].(string)
+	if !ok {
+		return "", fmt.Errorf("interface_id must be a string")
+	}
+
+	ifaceNode, err := s.graph.GetNode(interfaceID)
+	if err != nil {
+		return "", fmt.Errorf("interface not found: %s", interfaceID)
+	}
+
+	implementors := s.graph.GetImplementors(interfaceID)
+
+	result := map[string]any{
+		"interface": map[string]any{
+			"id":      ifaceNode.ID,
+			"name":    ifaceNode.Name,
+			"package": ifaceNode.Package,
+			"methods": ifaceNode.Methods,
+		},
+		"implementors": []map[string]any{},
+	}
+
+	implList := make([]map[string]any, 0, len(implementors))
+	for _, impl := range implementors {
+		implList = append(implList, map[string]any{
+			"id":      impl.ID,
+			"name":    impl.Name,
+			"package": impl.Package,
+			"kind":    impl.Metadata["kind"],
+		})
+	}
+	result["implementors"] = implList
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // MCP handler methods (mcp-go compatible)
 
 func (s *Server) handleSearchFunctionsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -514,4 +570,46 @@ func (s *Server) handleGetFunctionByNameMCP(ctx context.Context, req mcp.CallToo
 	}
 
 	return mcp.NewToolResultText(result), nil
+}
+
+func (s *Server) handleGetImplementorsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	interfaceID, err := req.RequireString("interface_id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	ifaceNode, err := s.graph.GetNode(interfaceID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("interface not found: %s", interfaceID)), nil
+	}
+
+	implementors := s.graph.GetImplementors(interfaceID)
+
+	result := map[string]any{
+		"interface": map[string]any{
+			"id":      ifaceNode.ID,
+			"name":    ifaceNode.Name,
+			"package": ifaceNode.Package,
+			"methods": ifaceNode.Methods,
+		},
+		"implementors": []map[string]any{},
+	}
+
+	implList := make([]map[string]any, 0, len(implementors))
+	for _, impl := range implementors {
+		implList = append(implList, map[string]any{
+			"id":      impl.ID,
+			"name":    impl.Name,
+			"package": impl.Package,
+			"kind":    impl.Metadata["kind"],
+		})
+	}
+	result["implementors"] = implList
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(string(data)), nil
 }
