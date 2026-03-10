@@ -280,3 +280,12 @@ func (g *Graph) GetInterfaces(typeID string) []*Node {
 	copy(result, ifaces)
 	return result
 }
+
+func (g *Graph) GetEdgesFrom(nodeID string) []*Edge {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	edges := g.edges[nodeID]
+	result := make([]*Edge, len(edges))
+	copy(result, edges)
+	return result
+}
