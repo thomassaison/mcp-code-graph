@@ -11,6 +11,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/llm"
 	"github.com/thomassaison/mcp-code-graph/internal/mcp"
 )
 
@@ -18,7 +19,6 @@ import (
 var version = "dev"
 
 func main() {
-	llmModel := flag.String("model", "", "LLM model for summaries (empty = mock)")
 	flag.Parse()
 
 	// Parse debug config
@@ -60,12 +60,18 @@ func main() {
 		log.Printf("warning: failed to parse embedding config: %v", err)
 	}
 
+	// Parse LLM config
+	llmCfg, err := llm.ParseConfig(os.Getenv("LLM_CONFIG"))
+	if err != nil {
+		log.Printf("warning: failed to parse LLM config: %v", err)
+	}
+
 	// Create server
 	server, err := mcp.NewServer(&mcp.Config{
 		DBPath:      dbPath,
 		ProjectPath: projectPath,
-		LLMModel:    *llmModel,
 		Embedding:   embeddingCfg,
+		LLM:         llmCfg,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)

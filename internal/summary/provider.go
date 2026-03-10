@@ -1,24 +1,15 @@
 package summary
 
-import (
-	"context"
-	"fmt"
-)
+import "github.com/thomassaison/mcp-code-graph/internal/llm"
 
-type SummaryRequest struct {
-	FunctionName string
-	Signature    string
-	Package      string
-	Docstring    string
-	Code         string
-}
+// SummaryRequest contains the information needed to generate a function summary.
+// Deprecated: Use llm.SummaryRequest instead.
+type SummaryRequest = llm.SummaryRequest
 
-type LLMProvider interface {
-	GenerateSummary(ctx context.Context, req SummaryRequest) (string, error)
-}
+// LLMProvider generates function summaries using an LLM.
+// Deprecated: Use llm.LLMProvider instead.
+type LLMProvider = llm.LLMProvider
 
-type MockProvider struct{}
-
-func (m *MockProvider) GenerateSummary(ctx context.Context, req SummaryRequest) (string, error) {
-	return fmt.Sprintf("Function %s in package %s", req.FunctionName, req.Package), nil
-}
+// MockProvider is a mock LLM provider for testing.
+// Deprecated: Use llm.MockProvider instead.
+type MockProvider = llm.MockProvider
