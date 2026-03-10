@@ -24,6 +24,7 @@ type Node struct {
 	Signature string
 	Docstring string
 	Summary   *Summary
+	Methods   []Method `json:"methods,omitempty"` // For interfaces: required method signatures
 	Metadata  map[string]any
 }
 
@@ -33,6 +34,11 @@ type Summary struct {
 	Model       string `json:"model"`
 	CreatedAt   int64  `json:"created_at"`
 	UpdatedAt   int64  `json:"updated_at"`
+}
+
+type Method struct {
+	Name      string `json:"name"`
+	Signature string `json:"signature"`
 }
 
 func (n *Node) SummaryText() string {

@@ -76,3 +76,22 @@ func TestNodeID(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeWithMethods(t *testing.T) {
+	node := &Node{
+		ID:      "type_io.Reader",
+		Type:    NodeTypeInterface,
+		Package: "io",
+		Name:    "Reader",
+		Methods: []Method{
+			{Name: "Read", Signature: "Read(p []byte) (n int, err error)"},
+		},
+	}
+
+	if len(node.Methods) != 1 {
+		t.Fatalf("expected 1 method, got %d", len(node.Methods))
+	}
+	if node.Methods[0].Name != "Read" {
+		t.Errorf("expected method name Read, got %s", node.Methods[0].Name)
+	}
+}
