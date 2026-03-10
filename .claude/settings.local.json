@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version)",
+      "Bash(git worktree add .worktrees/debug-mode -b feature/debug-mode)",
+      "Bash(go mod download)",
+      "Bash(go test ./...)",
+      "Bash(go test ./internal/debug/... -v)",
+      "Bash(git add internal/debug/debug.go internal/debug/debug_test.go)",
+      "Bash(git commit -m \"feat: add debug package with slog-based setup and LevelTrace\")",
+      "Bash(go build ./cmd/mcp-code-graph/...)",
+      "Bash(git add cmd/mcp-code-graph/main.go)",
+      "Bash(git commit -m \"feat: wire debug mode setup in main via MCP_CODE_GRAPH_DEBUG env var\")",
+      "Bash(git add internal/graph/persist.go)",
+      "Bash(git commit -m \"feat\\(debug\\): add slog instrumentation to graph persister\")",
+      "Bash(git add internal/indexer/indexer.go)",
+      "Bash(git commit -m \"feat\\(debug\\): add slog instrumentation to indexer\")",
+      "Bash(git add internal/mcp/tools.go)",
+      "Bash(git commit -m \"feat\\(debug\\): add slog instrumentation to search and embedding tools\")",
+      "Bash(git add internal/summary/generator.go)",
+      "Bash(git commit -m \"feat\\(debug\\): add slog instrumentation to summary generator\")",
+      "Bash(git add internal/parser/go/parser.go)",
+      "Bash(git commit -m \"feat\\(debug\\): add slog instrumentation to Go parser\")",
+      "Bash(git add README.md)",
+      "Bash(git commit -m \"docs: add debug mode documentation\")",
+      "Bash(git merge feature/debug-mode)",
+      "Bash(git stash)",
+      "Bash(git stash pop)",
+      "Bash(git branch -d feature/debug-mode)",
+      "Bash(git worktree remove .worktrees/debug-mode)",
+      "Bash(git worktree remove --force .worktrees/debug-mode)"
+    ]
+  }
+}

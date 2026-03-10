@@ -65,7 +65,19 @@ func (p *OpenAIProvider) GenerateSummary(ctx context.Context, req SummaryRequest
 	body := openAIRequest{
 		Model: p.model,
 		Messages: []openAIMessage{
-			{Role: "system", Content: "You are a code documentation assistant. Generate concise, accurate function summaries. Respond with only the summary, no additional text."},
+			{Role: "system", Content: `You are a Go code documentation expert. Generate a single-line summary that captures:
+1. The function's primary purpose (start with a strong action verb)
+2. Key behavior (error handling, side effects, concurrency)
+3. Pattern tag if applicable: [Constructor], [Middleware], [HTTP Handler], [Factory], [Interface impl]
+
+Format: [Tag] <action verb> <purpose>. <behavior notes>.
+
+Examples:
+- [Constructor] Creates a new Server instance with configured timeouts. Thread-safe.
+- [HTTP Handler] Dispatches incoming requests to appropriate handlers. Returns 400 on invalid input.
+- Parses JSON configuration into a Config struct. Returns error on malformed input.
+
+Respond with ONLY the summary, no additional text.`},
 			{Role: "user", Content: prompt},
 		},
 	}
@@ -119,7 +131,7 @@ func (p *OpenAIProvider) GenerateSummary(ctx context.Context, req SummaryRequest
 func buildSummaryPrompt(req SummaryRequest) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Generate a one-line summary for this Go function:\n\n"))
+	sb.WriteString("Generate a one-line summary for this Go function:\n\n")
 	sb.WriteString(fmt.Sprintf("Package: %s\n", req.Package))
 	sb.WriteString(fmt.Sprintf("Function: %s\n", req.FunctionName))
 
@@ -134,6 +146,8 @@ func buildSummaryPrompt(req SummaryRequest) string {
 	if req.Code != "" {
 		sb.WriteString(fmt.Sprintf("Code:\n%s\n", req.Code))
 	}
+
+	sb.WriteString("\nIdentify: pattern (constructor/middleware/handler/factory), error behavior, side effects, concurrency usage, and any interfaces implemented.\n")
 
 	return sb.String()
 }
