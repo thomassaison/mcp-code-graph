@@ -203,6 +203,27 @@ The skill instructs the agent to:
 - Trace call chains with callers/callees tools
 - Follow workflows for understanding functions and answering "how does X work?" questions
 
+## Debug Mode
+
+Set `MCP_CODE_GRAPH_DEBUG` to enable verbose logging to stderr:
+
+| Value | Effect |
+|-------|--------|
+| `0` | Off (default) |
+| `1` | Basic — indexing, search path, embedding, LLM calls |
+| `2` | Verbose — per-file parsing, edge resolution, individual scores |
+
+Optionally write logs to a file (appended) with `MCP_CODE_GRAPH_DEBUG_FILE`:
+
+```json
+{
+  "env": {
+    "MCP_CODE_GRAPH_DEBUG": "1",
+    "MCP_CODE_GRAPH_DEBUG_FILE": "/tmp/mcp-code-graph-debug.log"
+  }
+}
+```
+
 ## Configuration
 
 See [ADR-0007](adr/0007-project-structure.md) for architecture details.
