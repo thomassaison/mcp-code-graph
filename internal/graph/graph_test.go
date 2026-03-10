@@ -266,3 +266,43 @@ func TestGraphImplementationIndexes(t *testing.T) {
 		t.Errorf("expected interface %s, got %s", iface.ID, interfaces[0].ID)
 	}
 }
+
+func TestGraphGetImplementors(t *testing.T) {
+	g := New()
+
+	iface := &Node{ID: "type_io.Reader", Type: NodeTypeInterface, Package: "io", Name: "Reader"}
+	typ1 := &Node{ID: "type_os.File", Type: NodeTypeType, Package: "os", Name: "File"}
+	typ2 := &Node{ID: "type_bytes.Buffer", Type: NodeTypeType, Package: "bytes", Name: "Buffer"}
+
+	g.AddNode(iface)
+	g.AddNode(typ1)
+	g.AddNode(typ2)
+
+	g.AddEdge(&Edge{From: typ1.ID, To: iface.ID, Type: EdgeTypeImplements})
+	g.AddEdge(&Edge{From: typ2.ID, To: iface.ID, Type: EdgeTypeImplements})
+
+	implementors := g.GetImplementors(iface.ID)
+	if len(implementors) != 2 {
+		t.Fatalf("expected 2 implementors, got %d", len(implementors))
+	}
+}
+
+func TestGraphGetInterfaces(t *testing.T) {
+	g := New()
+
+	iface1 := &Node{ID: "type_io.Reader", Type: NodeTypeInterface, Package: "io", Name: "Reader"}
+	iface2 := &Node{ID: "type_io.Writer", Type: NodeTypeInterface, Package: "io", Name: "Writer"}
+	typ := &Node{ID: "type_os.File", Type: NodeTypeType, Package: "os", Name: "File"}
+
+	g.AddNode(iface1)
+	g.AddNode(iface2)
+	g.AddNode(typ)
+
+	g.AddEdge(&Edge{From: typ.ID, To: iface1.ID, Type: EdgeTypeImplements})
+	g.AddEdge(&Edge{From: typ.ID, To: iface2.ID, Type: EdgeTypeImplements})
+
+	interfaces := g.GetInterfaces(typ.ID)
+	if len(interfaces) != 2 {
+		t.Fatalf("expected 2 interfaces, got %d", len(interfaces))
+	}
+}

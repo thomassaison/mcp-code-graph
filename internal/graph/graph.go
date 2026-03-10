@@ -262,3 +262,21 @@ func (g *Graph) AllNodes() []*Node {
 	}
 	return nodes
 }
+
+func (g *Graph) GetImplementors(interfaceID string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	impls := g.byInterface[interfaceID]
+	result := make([]*Node, len(impls))
+	copy(result, impls)
+	return result
+}
+
+func (g *Graph) GetInterfaces(typeID string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	ifaces := g.byTypeImpl[typeID]
+	result := make([]*Node, len(ifaces))
+	copy(result, ifaces)
+	return result
+}
