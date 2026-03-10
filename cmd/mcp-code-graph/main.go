@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"net/http"
+
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/embedding"
 	"github.com/thomassaison/mcp-code-graph/internal/llm"
 	"github.com/thomassaison/mcp-code-graph/internal/mcp"
+	"github.com/thomassaison/mcp-code-graph/internal/web"
 )
 
 // version is injected at build time via ldflags
@@ -87,6 +90,17 @@ func main() {
 	slog.Info("project", "path", projectPath)
 	slog.Info("database", "path", dbPath)
 	slog.Info("indexed", "functions", server.Graph().NodeCount())
+
+	// Start web server if configured
+	if webAddr := os.Getenv("MCP_CODE_GRAPH_WEB"); webAddr != "" {
+		go func() {
+			webHandler := web.NewHandler(server.Graph())
+			slog.Info("Starting web server", "address", webAddr)
+			if err := http.ListenAndServe(webAddr, webHandler); err != nil {
+				slog.Error("Web server error", "error", err)
+			}
+		}()
+	}
 
 	// Create MCP server with capabilities
 	mcpSrv := mcpserver.NewMCPServer(
