@@ -199,7 +199,11 @@ function setupTooltips() {
         const d = node.data();
         const content = buildTooltipContent(d);
 
-        const tip = tippy(ref, {
+        // tippy v6 requires a DOM element; use a dummy div with
+        // getReferenceClientRect to position relative to the cytoscape node
+        const dummyEl = document.createElement('div');
+        const tip = tippy(dummyEl, {
+            getReferenceClientRect: ref.getBoundingClientRect,
             content: content,
             trigger: 'manual',
             placement: 'right',
