@@ -17,6 +17,12 @@ An ADR is a document that captures an important architectural decision made alon
 | [0005](0005-hybrid-summary-generation.md) | Hybrid Summary Generation | Accepted |
 | [0006](0006-mcp-interface-design.md) | MCP Interface Design | Accepted |
 | [0007](0007-project-structure.md) | Project Structure | Accepted |
+| [0008](0008-mcp-protocol-implementation.md) | MCP Protocol Implementation | Accepted |
+| [0009](0009-auto-project-detection.md) | Automatic Project Detection and Database Location | Accepted |
+| [0010](0010-embedding-provider.md) | Embedding Provider for Semantic Search | Accepted |
+| [0011](0011-llm-provider.md) | LLM Provider for Function Summaries | Accepted |
+| [0012](0012-debug-mode.md) | Debug Mode with Structured Logging | Accepted |
+| [0013](0013-get-function-by-name-tool.md) | get_function_by_name Tool | Accepted |
 
 ## Creating a New ADR
 
