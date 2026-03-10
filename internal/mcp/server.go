@@ -23,14 +23,14 @@ type Config struct {
 }
 
 type Server struct {
-	graph     *graph.Graph
-	vector    *vector.Store
-	indexer   *indexer.Indexer
-	summary   *summary.Generator
-	persister *graph.Persister
-	parser    *goparser.GoParser
-	config    *Config
-	embedding embedding.EmbeddingProvider
+	graph             *graph.Graph
+	vector            *vector.Store
+	indexer           *indexer.Indexer
+	summary           *summary.Generator
+	persister         *graph.Persister
+	parser            *goparser.GoParser
+	config            *Config
+	embeddingProvider embedding.EmbeddingProvider
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -61,14 +61,14 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	return &Server{
-		graph:     gr,
-		vector:    vecStore,
-		indexer:   idx,
-		summary:   gen,
-		persister: persister,
-		parser:    p,
-		config:    cfg,
-		embedding: embProvider,
+		graph:             gr,
+		vector:            vecStore,
+		indexer:           idx,
+		summary:           gen,
+		persister:         persister,
+		parser:            p,
+		config:            cfg,
+		embeddingProvider: embProvider,
 	}, nil
 }
 
