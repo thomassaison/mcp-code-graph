@@ -1,8 +1,11 @@
 package indexer
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 	"github.com/thomassaison/mcp-code-graph/internal/parser"
 )
@@ -20,6 +23,7 @@ func New(g *graph.Graph, p parser.Parser) *Indexer {
 }
 
 func (idx *Indexer) IndexModule(root string) error {
+	slog.Debug("indexing module", "root", root)
 	result, err := idx.parser.ParseModule(root)
 	if err != nil {
 		return fmt.Errorf("parse module: %w", err)
@@ -43,6 +47,7 @@ func (idx *Indexer) IndexModule(root string) error {
 		idx.graph.AddEdge(edge)
 	}
 
+	slog.Debug("indexing module complete", "nodes", len(result.Nodes), "edges", len(result.Edges))
 	return nil
 }
 
@@ -94,6 +99,7 @@ func resolveEdges(result *parser.ParseResult) {
 	for _, edge := range result.Edges {
 		if resolved, ok := placeholderToID[edge.To]; ok {
 			edge.To = resolved.ID
+			slog.Log(context.Background(), debug.LevelTrace, "edge resolved", "from", edge.From, "to", edge.To)
 		}
 	}
 }
