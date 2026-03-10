@@ -2,6 +2,7 @@ package behavior
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -47,4 +48,52 @@ type mockLLMProvider struct {
 
 func (m *mockLLMProvider) Generate(ctx context.Context, prompt string) (string, error) {
 	return m.response, m.err
+}
+
+func TestLLMAnalyzer_Analyze_ProviderError(t *testing.T) {
+	provider := &mockLLMProvider{err: errors.New("connection failed")}
+	analyzer := NewLLMAnalyzer(provider)
+
+	_, err := analyzer.Analyze(context.Background(), AnalysisRequest{})
+	if err == nil {
+		t.Error("Analyze() should return error when provider fails")
+	}
+}
+
+func TestLLMAnalyzer_Analyze_InvalidJSON(t *testing.T) {
+	provider := &mockLLMProvider{response: "not json"}
+	analyzer := NewLLMAnalyzer(provider)
+
+	_, err := analyzer.Analyze(context.Background(), AnalysisRequest{})
+	if err == nil {
+		t.Error("Analyze() should return error for invalid JSON")
+	}
+}
+
+func TestLLMAnalyzer_Analyze_EmptyBehaviors(t *testing.T) {
+	provider := &mockLLMProvider{response: `{"behaviors": []}`}
+	analyzer := NewLLMAnalyzer(provider)
+
+	behaviors, err := analyzer.Analyze(context.Background(), AnalysisRequest{})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(behaviors) != 0 {
+		t.Errorf("Analyze() returned %d behaviors, want 0", len(behaviors))
+	}
+}
+
+func TestLLMAnalyzer_Analyze_MarkdownResponse(t *testing.T) {
+	provider := &mockLLMProvider{
+		response: "```json\n{\"behaviors\": [\"logging\"]}\n```",
+	}
+	analyzer := NewLLMAnalyzer(provider)
+
+	behaviors, err := analyzer.Analyze(context.Background(), AnalysisRequest{})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(behaviors) != 1 || behaviors[0] != BehaviorLogging {
+		t.Errorf("Analyze() behaviors = %v, want [logging]", behaviors)
+	}
 }

@@ -61,6 +61,13 @@ func (a *LLMAnalyzer) buildPrompt(req AnalysisRequest) string {
 func (a *LLMAnalyzer) parseResponse(response string) ([]string, error) {
 	response = strings.TrimSpace(response)
 
+	if idx := strings.Index(response, "{"); idx >= 0 {
+		response = response[idx:]
+	}
+	if idx := strings.LastIndex(response, "}"); idx >= 0 {
+		response = response[:idx+1]
+	}
+
 	var result struct {
 		Behaviors []string `json:"behaviors"`
 	}
