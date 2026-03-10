@@ -8,6 +8,7 @@ import (
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 	"github.com/thomassaison/mcp-code-graph/internal/parser"
+	"github.com/thomassaison/mcp-code-graph/internal/types"
 )
 
 type Indexer struct {
@@ -45,6 +46,25 @@ func (idx *Indexer) IndexModule(root string) error {
 
 	for _, edge := range result.Edges {
 		idx.graph.AddEdge(edge)
+	}
+
+	// Run type checker for interface resolution
+	checker := types.NewChecker()
+	typeResult, err := checker.Check(root)
+	if err != nil {
+		slog.Warn("type check failed, continuing without interface data", "error", err)
+	} else {
+		// Add interface and type nodes
+		for _, node := range typeResult.Interfaces {
+			idx.graph.AddNode(node)
+		}
+		for _, node := range typeResult.Types {
+			idx.graph.AddNode(node)
+		}
+		// Add implementation edges
+		for _, edge := range typeResult.Edges {
+			idx.graph.AddEdge(edge)
+		}
 	}
 
 	slog.Debug("indexing module complete", "nodes", len(result.Nodes), "edges", len(result.Edges))
