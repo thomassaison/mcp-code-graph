@@ -46,8 +46,10 @@ function renderGraph(data) {
         });
     }
 
+    const nodeIds = new Set(data.nodes.map(n => n.id));
     let edgeIdx = 0;
     for (const e of data.edges) {
+        if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) continue;
         cy.add({
             data: {
                 id: 'e-' + (edgeIdx++),
