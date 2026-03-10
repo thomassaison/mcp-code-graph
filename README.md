@@ -261,6 +261,8 @@ Add to your project's `.gitignore`:
 | `reindex_project` | Trigger full reindex |
 | `update_summary` | Update a function's summary |
 | `get_function_by_name` | Find functions by exact name |
+| `get_implementors` | Find all types that implement an interface |
+| `get_interfaces` | Find all interfaces a type implements |
 
 ## MCP Resources
 
