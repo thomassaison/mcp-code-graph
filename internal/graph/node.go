@@ -48,6 +48,30 @@ func (n *Node) SummaryText() string {
 	return ""
 }
 
+func (n *Node) Clone() *Node {
+	clone := *n
+	if n.Metadata != nil {
+		clone.Metadata = make(map[string]any, len(n.Metadata))
+		for k, v := range n.Metadata {
+			clone.Metadata[k] = v
+		}
+	}
+	if n.Summary != nil {
+		clone.Summary = &Summary{
+			Text:        n.Summary.Text,
+			GeneratedBy: n.Summary.GeneratedBy,
+			Model:       n.Summary.Model,
+			CreatedAt:   n.Summary.CreatedAt,
+			UpdatedAt:   n.Summary.UpdatedAt,
+		}
+	}
+	if n.Methods != nil {
+		clone.Methods = make([]Method, len(n.Methods))
+		copy(clone.Methods, n.Methods)
+	}
+	return &clone
+}
+
 func (n *Node) GenerateID() string {
 	switch n.Type {
 	case NodeTypeFunction, NodeTypeMethod:

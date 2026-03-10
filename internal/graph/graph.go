@@ -82,7 +82,7 @@ func (g *Graph) GetNode(id string) (*Node, error) {
 	if !ok {
 		return nil, ErrNodeNotFound
 	}
-	return node, nil
+	return node.Clone(), nil
 }
 
 func (g *Graph) AddEdge(edge *Edge) {
@@ -126,7 +126,7 @@ func (g *Graph) GetCallers(nodeID string) []*Node {
 	for _, edge := range g.inEdges[nodeID] {
 		if edge.Type == EdgeTypeCalls {
 			if node, ok := g.nodes[edge.From]; ok {
-				callers = append(callers, node)
+				callers = append(callers, node.Clone())
 			}
 		}
 	}
@@ -141,7 +141,7 @@ func (g *Graph) GetCallees(nodeID string) []*Node {
 	for _, edge := range g.edges[nodeID] {
 		if edge.Type == EdgeTypeCalls {
 			if node, ok := g.nodes[edge.To]; ok {
-				callees = append(callees, node)
+				callees = append(callees, node.Clone())
 			}
 		}
 	}
@@ -154,7 +154,7 @@ func (g *Graph) GetNodesByType(nodeType NodeType) []*Node {
 
 	var nodes []*Node
 	for _, node := range g.byType[nodeType] {
-		nodes = append(nodes, node)
+		nodes = append(nodes, node.Clone())
 	}
 	return nodes
 }
@@ -165,7 +165,7 @@ func (g *Graph) GetNodesByPackage(pkg string) []*Node {
 
 	var nodes []*Node
 	for _, node := range g.byPackage[pkg] {
-		nodes = append(nodes, node)
+		nodes = append(nodes, node.Clone())
 	}
 	return nodes
 }
@@ -176,7 +176,7 @@ func (g *Graph) GetNodesByName(name string) []*Node {
 
 	var nodes []*Node
 	for _, node := range g.byName[name] {
-		nodes = append(nodes, node)
+		nodes = append(nodes, node.Clone())
 	}
 	return nodes
 }
@@ -188,7 +188,7 @@ func (g *Graph) GetNodesByNameAndPackage(name, pkg string) []*Node {
 	var nodes []*Node
 	for _, node := range g.byName[name] {
 		if node.Package == pkg {
-			nodes = append(nodes, node)
+			nodes = append(nodes, node.Clone())
 		}
 	}
 	return nodes
@@ -317,7 +317,7 @@ func (g *Graph) GetNeighborhood(nodeID string, depth int) ([]*Node, []*Edge) {
 		visited[id] = true
 
 		if node, ok := g.nodes[id]; ok {
-			nodes[id] = node
+			nodes[id] = node.Clone()
 		}
 
 		for _, edge := range g.edges[id] {
@@ -353,7 +353,9 @@ func (g *Graph) GetImplementors(interfaceID string) []*Node {
 	defer g.mu.RUnlock()
 	impls := g.byInterface[interfaceID]
 	result := make([]*Node, len(impls))
-	copy(result, impls)
+	for i, impl := range impls {
+		result[i] = impl.Clone()
+	}
 	return result
 }
 
@@ -362,7 +364,9 @@ func (g *Graph) GetInterfaces(typeID string) []*Node {
 	defer g.mu.RUnlock()
 	ifaces := g.byTypeImpl[typeID]
 	result := make([]*Node, len(ifaces))
-	copy(result, ifaces)
+	for i, iface := range ifaces {
+		result[i] = iface.Clone()
+	}
 	return result
 }
 
@@ -383,7 +387,7 @@ func (g *Graph) GetNodesByBehaviors(behaviors []string) []*Node {
 		result := make([]*Node, 0, len(g.nodes))
 		for _, node := range g.nodes {
 			if node.Type == NodeTypeFunction || node.Type == NodeTypeMethod {
-				result = append(result, node)
+				result = append(result, node.Clone())
 			}
 		}
 		return result
@@ -397,7 +401,7 @@ func (g *Graph) GetNodesByBehaviors(behaviors []string) []*Node {
 
 		nodeBehaviors := getBehaviorsFromMetadata(node)
 		if hasAllBehaviors(nodeBehaviors, behaviors) {
-			result = append(result, node)
+			result = append(result, node.Clone())
 		}
 	}
 
