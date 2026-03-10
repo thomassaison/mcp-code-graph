@@ -35,6 +35,13 @@ type Summary struct {
 	UpdatedAt   int64  `json:"updated_at"`
 }
 
+func (n *Node) SummaryText() string {
+	if n.Summary != nil {
+		return n.Summary.Text
+	}
+	return ""
+}
+
 func (n *Node) GenerateID() string {
 	switch n.Type {
 	case NodeTypeFunction, NodeTypeMethod:

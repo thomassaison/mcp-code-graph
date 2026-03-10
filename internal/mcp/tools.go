@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -22,7 +23,7 @@ func (s *Server) GetTools() []Tool {
 	return []Tool{
 		{
 			Name:        "search_functions",
-			Description: "Search for functions by name (stub - semantic search not yet implemented)",
+			Description: "Search for functions by name using semantic similarity or name matching",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -112,38 +113,100 @@ func (s *Server) handleSearchFunctions(ctx context.Context, args map[string]any)
 		limit = int(l)
 	}
 
+	if s.embeddingProvider != nil {
+		return s.semanticSearch(ctx, query, limit)
+	}
+
+	return s.nameSearch(query, limit)
+}
+
+func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (string, error) {
+	queryEmbedding, err := s.embeddingProvider.Embed(ctx, query)
+	if err != nil {
+		log.Printf("warning: failed to embed query, falling back to name search: %v", err)
+		return s.nameSearch(query, limit)
+	}
+
 	functions := s.graph.GetNodesByType(graph.NodeTypeFunction)
-	var results []map[string]any
-	for i, fn := range functions {
-		if i >= limit {
-			break
+	for _, fn := range functions {
+		if err := s.ensureFunctionEmbedding(ctx, fn); err != nil {
+			log.Printf("warning: failed to embed function %s: %v", fn.Name, err)
 		}
-		results = append(results, map[string]any{
-			"id":        fn.ID,
-			"name":      fn.Name,
-			"package":   fn.Package,
-			"signature": fn.Signature,
-			"score":     1.0 - float32(i)*0.1,
+	}
+
+	results, err := s.vector.Search(queryEmbedding, limit)
+	if err != nil {
+		log.Printf("warning: vector search failed, falling back to name search: %v", err)
+		return s.nameSearch(query, limit)
+	}
+
+	var output []map[string]any
+	for _, r := range results {
+		node, err := s.graph.GetNode(r.NodeID)
+		if err != nil {
+			continue
+		}
+		output = append(output, map[string]any{
+			"id":        node.ID,
+			"name":      node.Name,
+			"package":   node.Package,
+			"signature": node.Signature,
+			"summary":   node.SummaryText(),
+			"score":     r.Score,
 		})
 	}
 
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (s *Server) ensureFunctionEmbedding(ctx context.Context, node *graph.Node) error {
+	if node.Summary == nil || node.Summary.Text == "" {
+		if err := s.summary.Generate(ctx, node); err != nil {
+			return fmt.Errorf("generate summary: %w", err)
+		}
+	}
+
+	text := node.SummaryText()
+	if text == "" {
+		text = fmt.Sprintf("%s %s", node.Name, node.Signature)
+	}
+
+	embedding, err := s.embeddingProvider.Embed(ctx, text)
+	if err != nil {
+		return fmt.Errorf("embed: %w", err)
+	}
+
+	if err := s.vector.Insert(node.ID, text, embedding); err != nil {
+		return fmt.Errorf("store embedding: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Server) nameSearch(query string, limit int) (string, error) {
+	functions := s.graph.GetNodesByType(graph.NodeTypeFunction)
+	var results []map[string]any
+
+	queryLower := strings.ToLower(query)
+
 	for _, fn := range functions {
-		if fn.Name == query || fn.Package == query {
-			found := false
-			for _, r := range results {
-				if r["id"] == fn.ID {
-					found = true
-					break
-				}
-			}
-			if !found && len(results) < limit {
-				results = append(results, map[string]any{
-					"id":        fn.ID,
-					"name":      fn.Name,
-					"package":   fn.Package,
-					"signature": fn.Signature,
-					"score":     float32(0.9),
-				})
+		nameLower := strings.ToLower(fn.Name)
+		pkgLower := strings.ToLower(fn.Package)
+
+		if strings.Contains(nameLower, queryLower) || strings.Contains(pkgLower, queryLower) {
+			results = append(results, map[string]any{
+				"id":        fn.ID,
+				"name":      fn.Name,
+				"package":   fn.Package,
+				"signature": fn.Signature,
+			})
+
+			if len(results) >= limit {
+				break
 			}
 		}
 	}
