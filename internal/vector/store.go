@@ -121,6 +121,25 @@ func (s *Store) Close() {
 	}
 }
 
+func (s *Store) GetEmbedding(nodeID string) ([]float32, error) {
+	var embeddingBytes []byte
+	err := s.db.QueryRow(`SELECT embedding FROM embeddings WHERE node_id = ?`, nodeID).Scan(&embeddingBytes)
+	if err != nil {
+		return nil, fmt.Errorf("get embedding: %w", err)
+	}
+
+	embedding := make([]float32, len(embeddingBytes)/4)
+	for i := range embedding {
+		bits := uint32(embeddingBytes[i*4]) |
+			uint32(embeddingBytes[i*4+1])<<8 |
+			uint32(embeddingBytes[i*4+2])<<16 |
+			uint32(embeddingBytes[i*4+3])<<24
+		embedding[i] = math.Float32frombits(bits)
+	}
+
+	return embedding, nil
+}
+
 func cosineSimilarity(a, b []float32) float32 {
 	if len(a) != len(b) {
 		return 0

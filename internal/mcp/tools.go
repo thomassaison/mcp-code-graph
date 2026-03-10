@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -153,6 +155,31 @@ func (s *Server) GetTools() []Tool {
 				"required": []string{"type_id"},
 			},
 			Handler: s.handleGetInterfaces,
+		},
+		{
+			Name:        "search_by_behavior",
+			Description: "Search for functions by behavior (logging, error handling, database access, etc.) combined with semantic search",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "The semantic search query describing the function purpose",
+					},
+					"behaviors": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "Behavior tags to filter by (AND logic): logging, error-handle, database, http-client, file-io, concurrency",
+					},
+					"limit": map[string]any{
+						"type":        "number",
+						"description": "Maximum number of results to return",
+						"default":     10,
+					},
+				},
+				"required": []string{"query"},
+			},
+			Handler: s.handleSearchByBehavior,
 		},
 	}
 }
@@ -513,6 +540,127 @@ func (s *Server) handleGetInterfaces(ctx context.Context, args map[string]any) (
 	return string(data), nil
 }
 
+func (s *Server) handleSearchByBehavior(ctx context.Context, args map[string]any) (string, error) {
+	query, _ := args["query"].(string)
+
+	var behaviors []string
+	if behaviorsRaw, ok := args["behaviors"].([]any); ok {
+		for _, b := range behaviorsRaw {
+			if bs, ok := b.(string); ok {
+				behaviors = append(behaviors, bs)
+			}
+		}
+	}
+
+	limit := 10
+	if limitRaw, ok := args["limit"].(float64); ok {
+		limit = int(limitRaw)
+	}
+
+	nodes := s.graph.GetNodesByBehaviors(behaviors)
+
+	if s.embeddingProvider != nil {
+		return s.semanticBehaviorSearch(ctx, query, nodes, limit)
+	}
+
+	return s.formatBehaviorResults(nodes, limit), nil
+}
+
+func (s *Server) semanticBehaviorSearch(ctx context.Context, query string, nodes []*graph.Node, limit int) (string, error) {
+	queryEmbedding, err := s.embeddingProvider.Embed(ctx, query)
+	if err != nil {
+		slog.Debug("embedding failed, returning filtered results", "error", err)
+		return s.formatBehaviorResults(nodes, limit), nil
+	}
+
+	type scoredNode struct {
+		node  *graph.Node
+		score float32
+	}
+
+	var scoredNodes []scoredNode
+	for _, node := range nodes {
+		summary := node.SummaryText()
+		if summary == "" {
+			continue
+		}
+
+		if err := s.ensureFunctionEmbedding(ctx, node); err != nil {
+			continue
+		}
+
+		nodeEmbedding, err := s.vector.GetEmbedding(node.ID)
+		if err != nil {
+			continue
+		}
+
+		score := cosineSimilarity(queryEmbedding, nodeEmbedding)
+		scoredNodes = append(scoredNodes, scoredNode{node: node, score: score})
+	}
+
+	sort.Slice(scoredNodes, func(i, j int) bool {
+		return scoredNodes[i].score > scoredNodes[j].score
+	})
+
+	if len(scoredNodes) > limit {
+		scoredNodes = scoredNodes[:limit]
+	}
+
+	var results []map[string]any
+	for _, sn := range scoredNodes {
+		results = append(results, map[string]any{
+			"id":        sn.node.ID,
+			"name":      sn.node.Name,
+			"package":   sn.node.Package,
+			"signature": sn.node.Signature,
+			"behaviors": sn.node.Metadata["behaviors"],
+			"summary":   sn.node.SummaryText(),
+			"score":     sn.score,
+		})
+	}
+
+	resultJSON, _ := json.MarshalIndent(results, "", "  ")
+	return string(resultJSON), nil
+}
+
+func (s *Server) formatBehaviorResults(nodes []*graph.Node, limit int) string {
+	if limit > 0 && len(nodes) > limit {
+		nodes = nodes[:limit]
+	}
+
+	var results []map[string]any
+	for _, node := range nodes {
+		results = append(results, map[string]any{
+			"id":        node.ID,
+			"name":      node.Name,
+			"package":   node.Package,
+			"signature": node.Signature,
+			"behaviors": node.Metadata["behaviors"],
+			"summary":   node.SummaryText(),
+		})
+	}
+
+	resultJSON, _ := json.MarshalIndent(results, "", "  ")
+	return string(resultJSON)
+}
+
+func cosineSimilarity(a, b []float32) float32 {
+	var dotProduct, normA, normB float32
+	for i := range a {
+		dotProduct += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dotProduct / (sqrt32(normA) * sqrt32(normB))
+}
+
+func sqrt32(x float32) float32 {
+	return float32(math.Sqrt(float64(x)))
+}
+
 // MCP handler methods (mcp-go compatible)
 
 func (s *Server) handleSearchFunctionsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -730,4 +878,30 @@ func (s *Server) handleGetInterfacesMCP(ctx context.Context, req mcp.CallToolReq
 	}
 
 	return mcp.NewToolResultText(string(data)), nil
+}
+
+func (s *Server) handleSearchByBehaviorMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	query, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := map[string]any{
+		"query": query,
+	}
+
+	if behaviorsRaw, ok := req.GetArguments()["behaviors"]; ok {
+		args["behaviors"] = behaviorsRaw
+	}
+
+	if limitRaw, ok := req.GetArguments()["limit"].(float64); ok {
+		args["limit"] = limitRaw
+	}
+
+	result, err := s.handleSearchByBehavior(ctx, args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(result), nil
 }

@@ -563,3 +563,41 @@ func TestServer_GetInterfacesTool(t *testing.T) {
 		t.Errorf("expected 1 interface, got %d", len(interfaces))
 	}
 }
+
+func TestServer_SearchByBehaviorTool(t *testing.T) {
+	srv, err := NewServer(&Config{
+		DBPath:      t.TempDir() + "/test.db",
+		ProjectPath: ".",
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	node := &graph.Node{
+		ID:        "func_service_LogError_test.go:10",
+		Type:      graph.NodeTypeFunction,
+		Package:   "service",
+		Name:      "LogError",
+		Signature: "func LogError(msg string)",
+		Summary:   &graph.Summary{Text: "[Logging] Logs error messages to stdout"},
+		Metadata: map[string]any{
+			"behaviors": []string{"logging", "error-handle"},
+		},
+	}
+	srv.graph.AddNode(node)
+
+	result, err := srv.handleSearchByBehavior(context.Background(), map[string]any{
+		"query":     "log errors",
+		"behaviors": []any{"logging", "error-handle"},
+		"limit":     float64(10),
+	})
+	if err != nil {
+		t.Fatalf("handleSearchByBehavior() error = %v", err)
+	}
+
+	t.Logf("Result: %s", result)
+
+	if !strings.Contains(result, "LogError") {
+		t.Error("Result should contain LogError function")
+	}
+}

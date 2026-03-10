@@ -112,6 +112,7 @@ func (s *Server) RegisterTools(mcpServer *mcpserver.MCPServer) {
 	s.addGetFunctionByNameTool(mcpServer)
 	s.addGetImplementorsTool(mcpServer)
 	s.addGetInterfacesTool(mcpServer)
+	s.addSearchByBehaviorTool(mcpServer)
 }
 
 // RegisterResources registers all MCP resources with the given server.
@@ -239,6 +240,23 @@ func (s *Server) addGetInterfacesTool(mcpServer *mcpserver.MCPServer) {
 		),
 	)
 	mcpServer.AddTool(tool, s.handleGetInterfacesMCP)
+}
+
+func (s *Server) addSearchByBehaviorTool(mcpServer *mcpserver.MCPServer) {
+	tool := mcp.NewTool("search_by_behavior",
+		mcp.WithDescription("Search for functions by behavior (logging, error handling, database access, etc.) combined with semantic search"),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("The semantic search query describing the function purpose"),
+		),
+		mcp.WithArray("behaviors",
+			mcp.Description("Behavior tags to filter by (AND logic): logging, error-handle, database, http-client, file-io, concurrency"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum number of results to return"),
+		),
+	)
+	mcpServer.AddTool(tool, s.handleSearchByBehaviorMCP)
 }
 
 // Start is deprecated. Use IndexProject() followed by MCP server.ServeStdio() instead.
