@@ -218,6 +218,17 @@ func (g *Graph) RemoveNodesForPackage(pkg string) {
 		g.edges[fromID] = filtered
 	}
 
+	// Clean up inEdges for surviving nodes - remove edges from deleted nodes
+	for toID, edges := range g.inEdges {
+		filtered := edges[:0]
+		for _, e := range edges {
+			if !nodeIDs[e.From] {
+				filtered = append(filtered, e)
+			}
+		}
+		g.inEdges[toID] = filtered
+	}
+
 	for id := range nodeIDs {
 		node := g.nodes[id]
 		delete(g.nodes, id)

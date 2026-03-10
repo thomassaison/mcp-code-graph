@@ -436,3 +436,34 @@ func TestAllEdges(t *testing.T) {
 		t.Errorf("AllEdges() = %d, want 2", len(edges))
 	}
 }
+
+func TestRemoveNodesForPackage_CleansInEdges(t *testing.T) {
+	g := New()
+
+	// Foo (pkg1) calls Bar (pkg2) - when we remove pkg1,
+	// Bar's inEdges should be cleaned up
+	g.AddNode(&Node{ID: "func_pkg1_Foo", Type: NodeTypeFunction, Package: "pkg1", Name: "Foo"})
+	g.AddNode(&Node{ID: "func_pkg2_Bar", Type: NodeTypeFunction, Package: "pkg2", Name: "Bar"})
+
+	// Foo calls Bar - so Bar has an incoming edge from Foo
+	g.AddEdge(&Edge{From: "func_pkg1_Foo", To: "func_pkg2_Bar", Type: EdgeTypeCalls})
+
+	g.RemoveNodesForPackage("pkg1")
+
+	_, err := g.GetNode("func_pkg2_Bar")
+	if err != nil {
+		t.Fatalf("Bar should still exist: %v", err)
+	}
+
+	// Bar's inEdges should be cleaned up - no ghost edge from deleted Foo
+	g.mu.RLock()
+	inEdges := g.inEdges["func_pkg2_Bar"]
+	g.mu.RUnlock()
+
+	if len(inEdges) != 0 {
+		t.Errorf("inEdges for Bar should be empty, got %d edges", len(inEdges))
+		for _, e := range inEdges {
+			t.Errorf("  ghost edge: %s -> %s", e.From, e.To)
+		}
+	}
+}
