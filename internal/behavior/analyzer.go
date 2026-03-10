@@ -18,6 +18,7 @@ type Analyzer interface {
 
 type MockAnalyzer struct {
 	behaviors []string
+	err       error
 }
 
 func NewMockAnalyzer() *MockAnalyzer {
@@ -27,6 +28,9 @@ func NewMockAnalyzer() *MockAnalyzer {
 }
 
 func (m *MockAnalyzer) Analyze(ctx context.Context, req AnalysisRequest) ([]string, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	if len(m.behaviors) > 0 {
 		return m.behaviors, nil
 	}
@@ -35,5 +39,10 @@ func (m *MockAnalyzer) Analyze(ctx context.Context, req AnalysisRequest) ([]stri
 
 func (m *MockAnalyzer) WithBehaviors(behaviors []string) *MockAnalyzer {
 	m.behaviors = behaviors
+	return m
+}
+
+func (m *MockAnalyzer) WithError(err error) *MockAnalyzer {
+	m.err = err
 	return m
 }

@@ -2,6 +2,7 @@ package behavior
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -42,5 +43,28 @@ func TestMockAnalyzerWithPresetBehaviors(t *testing.T) {
 
 	if len(behaviors) != len(preset) {
 		t.Errorf("Analyze() returned %d behaviors, want %d", len(behaviors), len(preset))
+	}
+	for i, b := range preset {
+		if behaviors[i] != b {
+			t.Errorf("Analyze() behaviors[%d] = %q, want %q", i, behaviors[i], b)
+		}
+	}
+}
+
+func TestMockAnalyzerWithError(t *testing.T) {
+	expectedErr := errors.New("analysis failed")
+	analyzer := NewMockAnalyzer().WithError(expectedErr)
+
+	req := AnalysisRequest{
+		PackageName:  "testpkg",
+		FunctionName: "TestFunc",
+	}
+
+	behaviors, err := analyzer.Analyze(context.Background(), req)
+	if err != expectedErr {
+		t.Errorf("Analyze() error = %v, want %v", err, expectedErr)
+	}
+	if behaviors != nil {
+		t.Error("Analyze() should return nil behaviors on error")
 	}
 }
