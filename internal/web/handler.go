@@ -23,6 +23,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	switch {
+	case path == "/api/graph":
+		h.handleGraph(w, r)
 	case path == "/api/packages":
 		h.handlePackages(w, r)
 	case strings.HasPrefix(path, "/api/packages/") && strings.HasSuffix(path, "/nodes"):

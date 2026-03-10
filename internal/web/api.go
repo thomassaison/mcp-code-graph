@@ -55,6 +55,60 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+type GraphResponse struct {
+	Nodes []NodeResponse `json:"nodes"`
+	Edges []EdgeResponse `json:"edges"`
+}
+
+func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
+	allNodes := h.graph.AllNodes()
+	allEdges := h.graph.AllEdges()
+
+	nodes := make([]NodeResponse, 0, len(allNodes))
+	for _, n := range allNodes {
+		resp := NodeResponse{
+			ID:        n.ID,
+			Name:      n.Name,
+			Type:      string(n.Type),
+			Package:   n.Package,
+			File:      n.File,
+			Line:      n.Line,
+			Signature: n.Signature,
+			Docstring: n.Docstring,
+		}
+		if n.Summary != nil {
+			resp.Summary = n.Summary.Text
+		}
+		if n.Metadata != nil {
+			if beh, ok := n.Metadata["behaviors"].([]string); ok {
+				resp.Behaviors = beh
+			}
+		}
+		for _, m := range n.Methods {
+			resp.Methods = append(resp.Methods, MethodResp{
+				Name:      m.Name,
+				Signature: m.Signature,
+			})
+		}
+		nodes = append(nodes, resp)
+	}
+
+	edges := make([]EdgeResponse, 0, len(allEdges))
+	for _, e := range allEdges {
+		edges = append(edges, EdgeResponse{
+			From: e.From,
+			To:   e.To,
+			Type: string(e.Type),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(GraphResponse{
+		Nodes: nodes,
+		Edges: edges,
+	})
+}
+
 func (h *Handler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	pkgs := h.graph.AllPackages()
 	sort.Strings(pkgs)

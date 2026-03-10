@@ -249,6 +249,30 @@ func TestHandleStats(t *testing.T) {
 	assert.Equal(t, 1, stats.ByPackage["pkg2"])
 }
 
+func TestHandleGraph(t *testing.T) {
+	h := NewHandler(newTestGraph())
+	req := httptest.NewRequest("GET", "/api/graph", nil)
+	rec := httptest.NewRecorder()
+
+	h.handleGraph(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var resp GraphResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 3, len(resp.Nodes))
+	assert.Equal(t, 1, len(resp.Edges))
+
+	// Verify node details are populated
+	for _, n := range resp.Nodes {
+		if n.Name == "Func1" {
+			assert.Equal(t, "func Func1() error", n.Signature)
+			assert.Equal(t, "A test function", n.Summary)
+		}
+	}
+}
+
 func TestServeHTTP_Routing(t *testing.T) {
 	h := NewHandler(newTestGraph())
 
@@ -256,6 +280,7 @@ func TestServeHTTP_Routing(t *testing.T) {
 		path       string
 		wantStatus int
 	}{
+		{"/api/graph", http.StatusOK},
 		{"/api/packages", http.StatusOK},
 		{"/api/packages/pkg1/nodes", http.StatusOK},
 		{"/api/nodes/f1", http.StatusOK},
