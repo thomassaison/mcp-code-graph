@@ -135,7 +135,7 @@ func (s *Server) RegisterResources(mcpServer *mcpserver.MCPServer) {
 
 func (s *Server) addSearchFunctionsTool(mcpServer *mcpserver.MCPServer) {
 	tool := mcp.NewTool("search_functions",
-		mcp.WithDescription("Search for functions by name (stub - semantic search not yet implemented)"),
+		mcp.WithDescription("Search for functions by name or semantic similarity"),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("The search query"),

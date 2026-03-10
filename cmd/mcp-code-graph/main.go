@@ -11,6 +11,9 @@ import (
 	"github.com/thomas-saison/mcp-code-graph/internal/mcp"
 )
 
+// version is injected at build time via ldflags
+var version = "dev"
+
 func main() {
 	llmModel := flag.String("model", "", "LLM model for summaries (empty = mock)")
 	flag.Parse()
@@ -67,7 +70,7 @@ func main() {
 	// Create MCP server with capabilities
 	mcpSrv := mcpserver.NewMCPServer(
 		"mcp-code-graph",
-		"1.0.0",
+		version,
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(true, true),
 	)
