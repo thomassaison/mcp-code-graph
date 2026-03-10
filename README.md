@@ -256,6 +256,7 @@ Add to your project's `.gitignore`:
 | Tool | Description |
 |------|-------------|
 | `search_functions` | Search for functions by name or semantic similarity |
+| `search_by_behavior` | Search for functions by behavior tags combined with semantic search |
 | `get_callers` | Get all functions that call this function |
 | `get_callees` | Get all functions called by this function |
 | `reindex_project` | Trigger full reindex |

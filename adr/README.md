@@ -24,6 +24,7 @@ An ADR is a document that captures an important architectural decision made alon
 | [0012](0012-debug-mode.md) | Debug Mode with Structured Logging | Accepted |
 | [0013](0013-get-function-by-name-tool.md) | get_function_by_name Tool | Accepted |
 | [0014](0014-implicit-interface-resolver.md) | Implicit Interface Resolver | Accepted |
+| [0015](0015-behavioral-search.md) | Behavioral Function Search | Accepted |
 
 ## Creating a New ADR
 
