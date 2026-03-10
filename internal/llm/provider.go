@@ -17,6 +17,7 @@ type SummaryRequest struct {
 // LLMProvider generates function summaries using an LLM.
 type LLMProvider interface {
 	GenerateSummary(ctx context.Context, req SummaryRequest) (string, error)
+	Generate(ctx context.Context, prompt string) (string, error)
 }
 
 // Config holds configuration for an LLM provider.
@@ -30,6 +31,14 @@ type Config struct {
 // MockProvider is a mock LLM provider for testing.
 type MockProvider struct{}
 
+func NewMockProvider() *MockProvider {
+	return &MockProvider{}
+}
+
 func (m *MockProvider) GenerateSummary(ctx context.Context, req SummaryRequest) (string, error) {
 	return fmt.Sprintf("Function %s in package %s", req.FunctionName, req.Package), nil
+}
+
+func (m *MockProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	return `{"behaviors": []}`, nil
 }

@@ -128,6 +128,60 @@ Respond with ONLY the summary, no additional text.`},
 	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }
 
+func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	body := openAIRequest{
+		Model: p.model,
+		Messages: []openAIMessage{
+			{Role: "user", Content: prompt},
+		},
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result openAIResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	if result.Error != nil {
+		return "", fmt.Errorf("API error: %s", result.Error.Message)
+	}
+
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+}
+
 func buildSummaryPrompt(req SummaryRequest) string {
 	var sb strings.Builder
 

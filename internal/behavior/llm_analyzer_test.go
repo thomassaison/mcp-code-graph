@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/thomassaison/mcp-code-graph/internal/llm"
 )
 
 func TestLLMAnalyzer_Analyze(t *testing.T) {
@@ -96,4 +98,26 @@ func TestLLMAnalyzer_Analyze_MarkdownResponse(t *testing.T) {
 	if len(behaviors) != 1 || behaviors[0] != BehaviorLogging {
 		t.Errorf("Analyze() behaviors = %v, want [logging]", behaviors)
 	}
+}
+
+func TestLLMAnalyzer_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	provider := llm.NewMockProvider()
+	analyzer := NewLLMAnalyzer(NewLLMProviderAdapter(provider))
+
+	req := AnalysisRequest{
+		PackageName:  "test",
+		FunctionName: "TestFunc",
+		Code:         "func TestFunc() { log.Println(\"test\") }",
+	}
+
+	behaviors, err := analyzer.Analyze(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+
+	t.Logf("Behaviors: %v", behaviors)
 }
