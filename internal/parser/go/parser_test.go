@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 func TestParseFile(t *testing.T) {
@@ -116,5 +118,65 @@ func helper() string {
 		if edge.From == "" || edge.To == "" {
 			t.Errorf("edge has empty From=%q or To=%q", edge.From, edge.To)
 		}
+	}
+}
+
+func TestParseFile_MethodReceiver(t *testing.T) {
+	tmpDir := t.TempDir()
+	goFile := filepath.Join(tmpDir, "test.go")
+
+	code := `package test
+
+type Server struct{}
+
+func (s *Server) Handle() {}
+func main() {}
+`
+	if err := os.WriteFile(goFile, []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New()
+	result, err := p.ParseFile(goFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find Handle method
+	var handleMethod *graph.Node
+	for _, node := range result.Nodes {
+		if node.Name == "Handle" {
+			handleMethod = node
+			break
+		}
+	}
+
+	if handleMethod == nil {
+		t.Fatal("Handle method not found")
+	}
+
+	if handleMethod.Type != graph.NodeTypeMethod {
+		t.Errorf("Handle.Type = %v, want %v", handleMethod.Type, graph.NodeTypeMethod)
+	}
+
+	if handleMethod.Metadata["receiver"] != "*Server" {
+		t.Errorf("Handle.Metadata[receiver] = %v, want *Server", handleMethod.Metadata["receiver"])
+	}
+
+	// main should still be a function
+	var mainFunc *graph.Node
+	for _, node := range result.Nodes {
+		if node.Name == "main" {
+			mainFunc = node
+			break
+		}
+	}
+
+	if mainFunc == nil {
+		t.Fatal("main function not found")
+	}
+
+	if mainFunc.Type != graph.NodeTypeFunction {
+		t.Errorf("main.Type = %v, want %v", mainFunc.Type, graph.NodeTypeFunction)
 	}
 }

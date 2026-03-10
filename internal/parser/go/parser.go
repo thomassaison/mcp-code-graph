@@ -52,6 +52,13 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 			Docstring: p.docstring(fn),
 			Metadata:  make(map[string]any),
 		}
+
+		// Detect method receiver
+		if fn.Recv != nil && len(fn.Recv.List) > 0 {
+			node.Type = graph.NodeTypeMethod
+			node.Metadata["receiver"] = p.typeString(fn.Recv.List[0].Type)
+		}
+
 		node.ID = node.GenerateID()
 		result.Nodes = append(result.Nodes, node)
 
