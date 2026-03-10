@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/thomas-saison/mcp-code-graph/internal/embedding"
 	"github.com/thomas-saison/mcp-code-graph/internal/mcp"
 )
 
@@ -35,11 +36,18 @@ func main() {
 	// Database path (without extension - server adds suffixes)
 	dbPath := filepath.Join(dbDir, "db")
 
+	// Parse embedding config
+	embeddingCfg, err := embedding.ParseConfig(os.Getenv("EMBEDDING_CONFIG"))
+	if err != nil {
+		log.Printf("warning: failed to parse embedding config: %v", err)
+	}
+
 	// Create server
 	server, err := mcp.NewServer(&mcp.Config{
 		DBPath:      dbPath,
 		ProjectPath: projectPath,
 		LLMModel:    *llmModel,
+		Embedding:   embeddingCfg,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
