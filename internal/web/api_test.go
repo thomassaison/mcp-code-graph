@@ -46,7 +46,7 @@ func newTestGraph() *graph.Graph {
 }
 
 func TestHandlePackages(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/packages", nil)
 	rec := httptest.NewRecorder()
 
@@ -61,7 +61,7 @@ func TestHandlePackages(t *testing.T) {
 }
 
 func TestHandlePackageNodes(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/packages/pkg1/nodes", nil)
 	rec := httptest.NewRecorder()
 
@@ -75,7 +75,7 @@ func TestHandlePackageNodes(t *testing.T) {
 }
 
 func TestHandlePackageNodes_Empty(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/packages/nonexistent/nodes", nil)
 	rec := httptest.NewRecorder()
 
@@ -89,7 +89,7 @@ func TestHandlePackageNodes_Empty(t *testing.T) {
 }
 
 func TestHandleNode(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/f1", nil)
 	rec := httptest.NewRecorder()
 
@@ -111,7 +111,7 @@ func TestHandleNode(t *testing.T) {
 }
 
 func TestHandleNode_NotFound(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/nonexistent", nil)
 	rec := httptest.NewRecorder()
 
@@ -125,7 +125,7 @@ func TestHandleNode_NotFound(t *testing.T) {
 }
 
 func TestHandleNode_WithInterface(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/t1", nil)
 	rec := httptest.NewRecorder()
 
@@ -141,7 +141,7 @@ func TestHandleNode_WithInterface(t *testing.T) {
 }
 
 func TestHandleNeighborhood(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/f1/neighborhood?depth=1", nil)
 	rec := httptest.NewRecorder()
 
@@ -157,7 +157,7 @@ func TestHandleNeighborhood(t *testing.T) {
 }
 
 func TestHandleNeighborhood_NotFound(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/nonexistent/neighborhood", nil)
 	rec := httptest.NewRecorder()
 
@@ -167,7 +167,7 @@ func TestHandleNeighborhood_NotFound(t *testing.T) {
 }
 
 func TestHandleNeighborhood_DefaultDepth(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/nodes/f1/neighborhood", nil)
 	rec := httptest.NewRecorder()
 
@@ -177,7 +177,7 @@ func TestHandleNeighborhood_DefaultDepth(t *testing.T) {
 }
 
 func TestHandleNeighborhood_InvalidDepth(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	// depth=5 should be clamped to default 1
 	req := httptest.NewRequest("GET", "/api/nodes/f1/neighborhood?depth=5", nil)
 	rec := httptest.NewRecorder()
@@ -188,7 +188,7 @@ func TestHandleNeighborhood_InvalidDepth(t *testing.T) {
 }
 
 func TestHandleSearch(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/search?q=Func1", nil)
 	rec := httptest.NewRecorder()
 
@@ -203,7 +203,7 @@ func TestHandleSearch(t *testing.T) {
 }
 
 func TestHandleSearch_Empty(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/search?q=", nil)
 	rec := httptest.NewRecorder()
 
@@ -217,7 +217,7 @@ func TestHandleSearch_Empty(t *testing.T) {
 }
 
 func TestHandleSearch_NoResults(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/search?q=Nonexistent", nil)
 	rec := httptest.NewRecorder()
 
@@ -231,7 +231,7 @@ func TestHandleSearch_NoResults(t *testing.T) {
 }
 
 func TestHandleStats(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/stats", nil)
 	rec := httptest.NewRecorder()
 
@@ -250,7 +250,7 @@ func TestHandleStats(t *testing.T) {
 }
 
 func TestHandleGraph(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 	req := httptest.NewRequest("GET", "/api/graph", nil)
 	rec := httptest.NewRecorder()
 
@@ -273,8 +273,77 @@ func TestHandleGraph(t *testing.T) {
 	}
 }
 
+func TestHandleGraph_ScopeFiltering(t *testing.T) {
+	g := graph.New()
+	// Project-local nodes
+	g.AddNode(&graph.Node{ID: "p1", Type: graph.NodeTypeFunction, Package: "example.com/mymod/internal/web", Name: "Handler"})
+	g.AddNode(&graph.Node{ID: "p2", Type: graph.NodeTypeFunction, Package: "example.com/mymod/internal/graph", Name: "Graph"})
+	// External/stdlib nodes
+	g.AddNode(&graph.Node{ID: "e1", Type: graph.NodeTypeFunction, Package: "fmt", Name: "Println"})
+	g.AddNode(&graph.Node{ID: "e2", Type: graph.NodeTypeFunction, Package: "github.com/other/lib", Name: "Do"})
+	// Edges: project-to-project, project-to-external
+	g.AddEdge(&graph.Edge{From: "p1", To: "p2", Type: graph.EdgeTypeCalls})
+	g.AddEdge(&graph.Edge{From: "p1", To: "e1", Type: graph.EdgeTypeCalls})
+	g.AddEdge(&graph.Edge{From: "e1", To: "e2", Type: graph.EdgeTypeCalls})
+
+	t.Run("default scope filters to project", func(t *testing.T) {
+		h := NewHandler(g, "example.com/mymod")
+		req := httptest.NewRequest("GET", "/api/graph", nil)
+		rec := httptest.NewRecorder()
+		h.handleGraph(rec, req)
+
+		var resp GraphResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.Equal(t, 2, len(resp.Nodes), "should only include project nodes")
+		assert.Equal(t, 1, len(resp.Edges), "should only include edges between project nodes")
+	})
+
+	t.Run("scope=all returns everything", func(t *testing.T) {
+		h := NewHandler(g, "example.com/mymod")
+		req := httptest.NewRequest("GET", "/api/graph?scope=all", nil)
+		rec := httptest.NewRecorder()
+		h.handleGraph(rec, req)
+
+		var resp GraphResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.Equal(t, 4, len(resp.Nodes), "should include all nodes")
+		assert.Equal(t, 3, len(resp.Edges), "should include all edges")
+	})
+
+	t.Run("no modulePath returns all nodes", func(t *testing.T) {
+		h := NewHandler(g, "")
+		req := httptest.NewRequest("GET", "/api/graph", nil)
+		rec := httptest.NewRecorder()
+		h.handleGraph(rec, req)
+
+		var resp GraphResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.Equal(t, 4, len(resp.Nodes), "with empty modulePath should include all")
+		assert.Equal(t, 3, len(resp.Edges), "with empty modulePath should include all edges")
+	})
+}
+
+func TestIsProjectPackage(t *testing.T) {
+	tests := []struct {
+		pkg        string
+		modulePath string
+		want       bool
+	}{
+		{"example.com/mymod/internal/web", "example.com/mymod", true},
+		{"example.com/mymod", "example.com/mymod", true},
+		{"fmt", "example.com/mymod", false},
+		{"github.com/other/lib", "example.com/mymod", false},
+		{"main", "example.com/mymod", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			assert.Equal(t, tt.want, isProjectPackage(tt.pkg, tt.modulePath))
+		})
+	}
+}
+
 func TestServeHTTP_Routing(t *testing.T) {
-	h := NewHandler(newTestGraph())
+	h := NewHandler(newTestGraph(), "")
 
 	tests := []struct {
 		path       string

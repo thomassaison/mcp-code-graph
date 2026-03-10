@@ -4,11 +4,11 @@ import (
 	"flag"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
-
-	"net/http"
+	"strings"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
@@ -94,7 +94,8 @@ func main() {
 	// Start web server if configured
 	if webAddr := os.Getenv("MCP_CODE_GRAPH_WEB"); webAddr != "" {
 		go func() {
-			webHandler := web.NewHandler(server.Graph())
+			modulePath := readModulePath(projectPath)
+			webHandler := web.NewHandler(server.Graph(), modulePath)
 			slog.Info("Starting web server", "address", webAddr)
 			if err := http.ListenAndServe(webAddr, webHandler); err != nil {
 				slog.Error("Web server error", "error", err)
@@ -119,4 +120,18 @@ func main() {
 		log.Printf("Server error: %v", err)
 		os.Exit(1)
 	}
+}
+
+func readModulePath(projectPath string) string {
+	data, err := os.ReadFile(filepath.Join(projectPath, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		}
+	}
+	return ""
 }

@@ -10,12 +10,13 @@ import (
 
 // Handler serves the web visualization UI and API endpoints.
 type Handler struct {
-	graph *graph.Graph
+	graph      *graph.Graph
+	modulePath string
 }
 
-// NewHandler creates a new web handler with the given graph.
-func NewHandler(g *graph.Graph) *Handler {
-	return &Handler{graph: g}
+// NewHandler creates a new web handler with the given graph and project module path.
+func NewHandler(g *graph.Graph, modulePath string) *Handler {
+	return &Handler{graph: g, modulePath: modulePath}
 }
 
 // ServeHTTP routes requests to API handlers or serves static files.

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type PackageNode struct {
@@ -64,8 +65,17 @@ func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
 	allNodes := h.graph.AllNodes()
 	allEdges := h.graph.AllEdges()
 
+	// Filter to project-local nodes by default
+	scope := r.URL.Query().Get("scope")
+	projectOnly := scope != "all" && h.modulePath != ""
+
+	nodeIDs := make(map[string]bool)
 	nodes := make([]NodeResponse, 0, len(allNodes))
 	for _, n := range allNodes {
+		if projectOnly && !isProjectPackage(n.Package, h.modulePath) {
+			continue
+		}
+		nodeIDs[n.ID] = true
 		resp := NodeResponse{
 			ID:        n.ID,
 			Name:      n.Name,
@@ -95,6 +105,9 @@ func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
 
 	edges := make([]EdgeResponse, 0, len(allEdges))
 	for _, e := range allEdges {
+		if projectOnly && (!nodeIDs[e.From] || !nodeIDs[e.To]) {
+			continue
+		}
 		edges = append(edges, EdgeResponse{
 			From: e.From,
 			To:   e.To,
@@ -107,6 +120,24 @@ func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
 		Nodes: nodes,
 		Edges: edges,
 	})
+}
+
+func isProjectPackage(pkg, modulePath string) bool {
+	// Match the module path itself or any sub-package
+	if strings.HasPrefix(pkg, modulePath) {
+		return true
+	}
+	// Also match short package names used in the project's own code
+	// (e.g. "graph", "mcp", "web" for internal packages)
+	parts := strings.Split(modulePath, "/")
+	if len(parts) > 0 {
+		lastPart := parts[len(parts)-1]
+		// Check if pkg matches an internal package pattern
+		if pkg == lastPart || pkg == "main" {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) handlePackages(w http.ResponseWriter, r *http.Request) {
