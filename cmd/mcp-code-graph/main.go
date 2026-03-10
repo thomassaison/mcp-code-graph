@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
@@ -92,16 +95,22 @@ func main() {
 	slog.Info("indexed", "functions", server.Graph().NodeCount())
 
 	// Start web server if configured
+	var httpSrv *http.Server
 	if webAddr := os.Getenv("MCP_CODE_GRAPH_WEB"); webAddr != "" {
+		modulePath := readModulePath(projectPath)
+		webHandler := web.NewHandler(server.Graph(), modulePath)
+		httpSrv = &http.Server{Addr: webAddr, Handler: webHandler}
 		go func() {
-			modulePath := readModulePath(projectPath)
-			webHandler := web.NewHandler(server.Graph(), modulePath)
 			slog.Info("Starting web server", "address", webAddr)
-			if err := http.ListenAndServe(webAddr, webHandler); err != nil {
+			if err := httpSrv.ListenAndServe(); err != http.ErrServerClosed {
 				slog.Error("Web server error", "error", err)
 			}
 		}()
 	}
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Create MCP server with capabilities
 	mcpSrv := mcpserver.NewMCPServer(
@@ -115,11 +124,26 @@ func main() {
 	server.RegisterTools(mcpSrv)
 	server.RegisterResources(mcpSrv)
 
-	// Start serving MCP protocol over stdio
-	if err := mcpserver.ServeStdio(mcpSrv); err != nil {
-		log.Printf("Server error: %v", err)
-		os.Exit(1)
+	// Start MCP server in goroutine
+	go func() {
+		if err := mcpserver.ServeStdio(mcpSrv); err != nil {
+			log.Printf("Server error: %v", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	<-sigChan
+	slog.Info("Shutting down...")
+
+	// Graceful shutdown
+	if httpSrv != nil {
+		if err := httpSrv.Shutdown(context.Background()); err != nil {
+			slog.Error("Web server shutdown error", "error", err)
+		}
 	}
+
+	server.Close()
+	slog.Info("Server stopped")
 }
 
 func readModulePath(projectPath string) string {
