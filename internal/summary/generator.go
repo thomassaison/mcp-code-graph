@@ -3,8 +3,10 @@ package summary
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
@@ -25,6 +27,8 @@ func (g *Generator) Generate(ctx context.Context, node *graph.Node) error {
 		return nil
 	}
 
+	slog.Debug("generating summary", "function", node.Name, "package", node.Package)
+
 	req := SummaryRequest{
 		FunctionName: node.Name,
 		Signature:    node.Signature,
@@ -36,6 +40,8 @@ func (g *Generator) Generate(ctx context.Context, node *graph.Node) error {
 	if err != nil {
 		return fmt.Errorf("generate summary: %w", err)
 	}
+
+	slog.Debug("summary generated", "function", node.Name)
 
 	node.Summary = &graph.Summary{
 		Text:        summary,
@@ -51,6 +57,7 @@ func (g *Generator) Generate(ctx context.Context, node *graph.Node) error {
 func (g *Generator) GenerateAll(ctx context.Context, gr *graph.Graph) error {
 	functions := gr.GetNodesByType(graph.NodeTypeFunction)
 	for _, fn := range functions {
+		slog.Log(ctx, debug.LevelTrace, "processing function for summary", "function", fn.Name)
 		if err := g.Generate(ctx, fn); err != nil {
 			continue
 		}
