@@ -106,7 +106,7 @@ func TestLLMAnalyzer_Integration(t *testing.T) {
 	}
 
 	provider := llm.NewMockProvider()
-	analyzer := NewLLMAnalyzer(NewLLMProviderAdapter(provider))
+	analyzer := NewLLMAnalyzer(provider)
 
 	req := AnalysisRequest{
 		PackageName:  "test",
