@@ -13,22 +13,35 @@ type Persister struct {
 	db     *sql.DB
 }
 
-func NewPersister(dbPath string) *Persister {
+func NewPersister(dbPath string) (*Persister, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enable WAL mode for better concurrent performance
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return &Persister{
 		dbPath: dbPath,
+		db:     db,
+	}, nil
+}
+
+func (p *Persister) Close() error {
+	if p.db != nil {
+		return p.db.Close()
 	}
+	return nil
 }
 
 func (p *Persister) Save(g *Graph) error {
 	slog.Debug("graph save started", "db", p.dbPath)
-	var err error
-	p.db, err = sql.Open("sqlite", p.dbPath)
-	if err != nil {
-		return err
-	}
-	defer p.db.Close()
 
-	_, err = p.db.Exec(`
+	_, err := p.db.Exec(`
 		CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
@@ -127,12 +140,6 @@ func (p *Persister) Save(g *Graph) error {
 
 func (p *Persister) Load(g *Graph) error {
 	slog.Debug("graph load started", "db", p.dbPath)
-	var err error
-	p.db, err = sql.Open("sqlite", p.dbPath)
-	if err != nil {
-		return err
-	}
-	defer p.db.Close()
 
 	rows, err := p.db.Query(`
 		SELECT id, type, package, name, file, line, column, signature, docstring, summary, metadata

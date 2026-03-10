@@ -45,7 +45,10 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	p := goparser.New()
 	idx := indexer.New(gr, p)
-	persister := graph.NewPersister(cfg.DBPath + ".graph.db")
+	persister, err := graph.NewPersister(cfg.DBPath + ".graph.db")
+	if err != nil {
+		return nil, fmt.Errorf("create persister: %w", err)
+	}
 
 	// Create LLM provider (falls back to MockProvider if not configured)
 	llmProvider, err := llm.NewProviderFromConfig(cfg.LLM)
@@ -287,6 +290,9 @@ func (s *Server) Close() {
 		log.Printf("failed to save graph on close: %v", err)
 	}
 	s.vector.Close()
+	if err := s.persister.Close(); err != nil {
+		log.Printf("failed to close persister: %v", err)
+	}
 }
 
 func (s *Server) Graph() *graph.Graph {

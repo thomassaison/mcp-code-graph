@@ -36,7 +36,11 @@ func TestPersistSaveAndLoad(t *testing.T) {
 	g.AddEdge(&Edge{From: node1.ID, To: node2.ID, Type: EdgeTypeCalls})
 
 	// Save
-	p := NewPersister(dbPath)
+	p, err := NewPersister(dbPath)
+	if err != nil {
+		t.Fatalf("NewPersister() error = %v", err)
+	}
+	defer p.Close()
 	if err := p.Save(g); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
