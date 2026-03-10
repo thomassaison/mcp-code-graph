@@ -263,6 +263,17 @@ func (g *Graph) AllNodes() []*Node {
 	return nodes
 }
 
+func (g *Graph) AllEdges() []*Edge {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var edges []*Edge
+	for _, edgeList := range g.edges {
+		edges = append(edges, edgeList...)
+	}
+	return edges
+}
+
 func (g *Graph) AllPackages() []string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()

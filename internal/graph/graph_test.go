@@ -422,3 +422,17 @@ func TestGetNeighborhood(t *testing.T) {
 		t.Errorf("GetNeighborhood(b, 2) edges = %d, want 2", len(edges))
 	}
 }
+
+func TestAllEdges(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "a", Type: NodeTypeFunction, Package: "pkg", Name: "A"})
+	g.AddNode(&Node{ID: "b", Type: NodeTypeFunction, Package: "pkg", Name: "B"})
+	g.AddNode(&Node{ID: "c", Type: NodeTypeFunction, Package: "pkg", Name: "C"})
+	g.AddEdge(&Edge{From: "a", To: "b", Type: EdgeTypeCalls})
+	g.AddEdge(&Edge{From: "b", To: "c", Type: EdgeTypeImplements})
+
+	edges := g.AllEdges()
+	if len(edges) != 2 {
+		t.Errorf("AllEdges() = %d, want 2", len(edges))
+	}
+}
