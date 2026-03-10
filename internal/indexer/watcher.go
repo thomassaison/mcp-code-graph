@@ -56,6 +56,9 @@ func (w *Watcher) processEvents() {
 	for {
 		select {
 		case <-w.done:
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		case event, ok := <-w.watcher.Events:
 			if !ok {
@@ -72,12 +75,11 @@ func (w *Watcher) processEvents() {
 			if timer != nil {
 				timer.Stop()
 			}
-			snapshot := pending
-			pending = nil
 			timer = time.AfterFunc(w.debounce, func() {
-				for path := range snapshot {
+				for path := range pending {
 					w.indexer.IndexFile(path)
 				}
+				pending = nil
 			})
 
 		case err, ok := <-w.watcher.Errors:
