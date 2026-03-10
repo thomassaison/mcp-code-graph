@@ -1,6 +1,6 @@
 ---
 name: mcp-code-graph
-description: Use when exploring code structure, understanding function relationships, searching for functions by purpose, or navigating call chains in a Go codebase. Triggers on questions like "what calls X", "find functions that do Y", "how does Z work", "show me the call chain for W".
+description: Use when exploring code structure, understanding function relationships, searching for functions by purpose or exact name, or navigating call chains in a Go codebase. Triggers on questions like "what calls X", "find functions that do Y", "how does Z work", "show me the call chain for W", "get function by name".
 ---
 
 # MCP Code Graph
@@ -26,7 +26,8 @@ This MCP server provides a **code graph database** for understanding Go codebase
 
 | Tool | Use For | Example |
 |------|---------|---------|
-| `search_functions` | Find functions by name or purpose | `{"query": "handle HTTP requests", "limit": 10}` |
+| `search_functions` | Find functions by name or purpose (semantic/fuzzy) | `{"query": "handle HTTP requests", "limit": 10}` |
+| `get_function_by_name` | Find functions by exact name (O(1) lookup) | `{"name": "HandleRequest", "package": "internal/mcp"}` |
 | `get_callers` | Who calls this function? | `{"function_id": "pkg.FuncName"}` |
 | `get_callees` | What does this function call? | `{"function_id": "pkg.FuncName"}` |
 | `reindex_project` | Refresh after code changes | `{}` |
@@ -60,6 +61,7 @@ Function IDs follow the pattern `package.FunctionName` or `package.Type.MethodNa
 
 ## Tips
 
+- **Exact name lookups:** Use `get_function_by_name` when you know the function name exactly — it's faster and more reliable than `search_functions`
 - **Semantic search** works best with natural language: "functions that parse Go source code" beats "parse"
 - **After code changes**, call `reindex_project` to refresh the graph
 - **Update summaries** when you understand a function better — this improves future semantic search
