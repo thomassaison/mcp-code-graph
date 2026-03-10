@@ -289,3 +289,66 @@ func (g *Graph) GetEdgesFrom(nodeID string) []*Edge {
 	copy(result, edges)
 	return result
 }
+
+func (g *Graph) GetNodesByBehaviors(behaviors []string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if len(behaviors) == 0 {
+		result := make([]*Node, 0, len(g.nodes))
+		for _, node := range g.nodes {
+			if node.Type == NodeTypeFunction || node.Type == NodeTypeMethod {
+				result = append(result, node)
+			}
+		}
+		return result
+	}
+
+	var result []*Node
+	for _, node := range g.nodes {
+		if node.Type != NodeTypeFunction && node.Type != NodeTypeMethod {
+			continue
+		}
+
+		nodeBehaviors := getBehaviorsFromMetadata(node)
+		if hasAllBehaviors(nodeBehaviors, behaviors) {
+			result = append(result, node)
+		}
+	}
+
+	return result
+}
+
+func getBehaviorsFromMetadata(node *Node) []string {
+	if node.Metadata == nil {
+		return nil
+	}
+
+	behaviorsRaw, ok := node.Metadata["behaviors"]
+	if !ok {
+		return nil
+	}
+
+	behaviors, ok := behaviorsRaw.([]string)
+	if !ok {
+		return nil
+	}
+
+	return behaviors
+}
+
+func hasAllBehaviors(nodeBehaviors, requiredBehaviors []string) bool {
+	for _, required := range requiredBehaviors {
+		found := false
+		for _, b := range nodeBehaviors {
+			if b == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}

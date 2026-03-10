@@ -306,3 +306,77 @@ func TestGraphGetInterfaces(t *testing.T) {
 		t.Fatalf("expected 2 interfaces, got %d", len(interfaces))
 	}
 }
+
+func TestGraph_GetNodesByBehaviors(t *testing.T) {
+	g := New()
+
+	node1 := &Node{
+		ID:      "func_test_Log_test.go:10",
+		Type:    NodeTypeFunction,
+		Package: "test",
+		Name:    "Log",
+		Metadata: map[string]any{
+			"behaviors": []string{"logging", "error-handle"},
+		},
+	}
+
+	node2 := &Node{
+		ID:      "func_test_Handle_test.go:20",
+		Type:    NodeTypeFunction,
+		Package: "test",
+		Name:    "Handle",
+		Metadata: map[string]any{
+			"behaviors": []string{"http-client", "error-handle"},
+		},
+	}
+
+	node3 := &Node{
+		ID:      "func_test_Process_test.go:30",
+		Type:    NodeTypeFunction,
+		Package: "test",
+		Name:    "Process",
+		Metadata: map[string]any{
+			"behaviors": []string{"database"},
+		},
+	}
+
+	g.AddNode(node1)
+	g.AddNode(node2)
+	g.AddNode(node3)
+
+	tests := []struct {
+		name      string
+		behaviors []string
+		wantCount int
+	}{
+		{
+			name:      "single behavior",
+			behaviors: []string{"logging"},
+			wantCount: 1,
+		},
+		{
+			name:      "multiple behaviors (AND)",
+			behaviors: []string{"logging", "error-handle"},
+			wantCount: 1,
+		},
+		{
+			name:      "behavior not found",
+			behaviors: []string{"file-io"},
+			wantCount: 0,
+		},
+		{
+			name:      "empty behaviors",
+			behaviors: []string{},
+			wantCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes := g.GetNodesByBehaviors(tt.behaviors)
+			if len(nodes) != tt.wantCount {
+				t.Errorf("GetNodesByBehaviors() returned %d nodes, want %d", len(nodes), tt.wantCount)
+			}
+		})
+	}
+}
