@@ -60,6 +60,10 @@ func (c *Checker) Check(root string) (*CheckResult, error) {
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
 
+			if obj.Type() == nil {
+				continue
+			}
+
 			if iface, ok := obj.Type().Underlying().(*types.Interface); ok {
 				node := c.interfaceToNode(pkg.PkgPath, name, iface)
 				result.Interfaces = append(result.Interfaces, node)
