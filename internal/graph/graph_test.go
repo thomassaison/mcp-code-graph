@@ -220,3 +220,49 @@ func TestGraph_GetNodesByNameAndPackage(t *testing.T) {
 		t.Fatalf("expected 0 nodes, got %d", len(nodes))
 	}
 }
+
+func TestGraphImplementationIndexes(t *testing.T) {
+	g := New()
+
+	iface := &Node{
+		ID:      "type_io.Reader",
+		Type:    NodeTypeInterface,
+		Package: "io",
+		Name:    "Reader",
+	}
+	typ := &Node{
+		ID:      "type_os.File",
+		Type:    NodeTypeType,
+		Package: "os",
+		Name:    "File",
+	}
+
+	g.AddNode(iface)
+	g.AddNode(typ)
+
+	edge := &Edge{
+		From: typ.ID,
+		To:   iface.ID,
+		Type: EdgeTypeImplements,
+		Metadata: map[string]any{
+			"pointer_receiver": true,
+		},
+	}
+	g.AddEdge(edge)
+
+	implementors := g.byInterface[iface.ID]
+	if len(implementors) != 1 {
+		t.Fatalf("expected 1 implementor, got %d", len(implementors))
+	}
+	if implementors[0].ID != typ.ID {
+		t.Errorf("expected implementor %s, got %s", typ.ID, implementors[0].ID)
+	}
+
+	interfaces := g.byTypeImpl[typ.ID]
+	if len(interfaces) != 1 {
+		t.Fatalf("expected 1 interface, got %d", len(interfaces))
+	}
+	if interfaces[0].ID != iface.ID {
+		t.Errorf("expected interface %s, got %s", iface.ID, interfaces[0].ID)
+	}
+}

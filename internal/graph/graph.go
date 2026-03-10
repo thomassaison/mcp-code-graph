@@ -19,16 +19,21 @@ type Graph struct {
 	byType    map[NodeType]map[string]*Node
 	byPackage map[string]map[string]*Node
 	byName    map[string]map[string]*Node
+
+	byInterface map[string][]*Node
+	byTypeImpl  map[string][]*Node
 }
 
 func New() *Graph {
 	return &Graph{
-		nodes:     make(map[string]*Node),
-		edges:     make(map[string][]*Edge),
-		inEdges:   make(map[string][]*Edge),
-		byType:    make(map[NodeType]map[string]*Node),
-		byPackage: make(map[string]map[string]*Node),
-		byName:    make(map[string]map[string]*Node),
+		nodes:       make(map[string]*Node),
+		edges:       make(map[string][]*Edge),
+		inEdges:     make(map[string][]*Edge),
+		byType:      make(map[NodeType]map[string]*Node),
+		byPackage:   make(map[string]map[string]*Node),
+		byName:      make(map[string]map[string]*Node),
+		byInterface: make(map[string][]*Node),
+		byTypeImpl:  make(map[string][]*Node),
 	}
 }
 
@@ -86,6 +91,15 @@ func (g *Graph) AddEdge(edge *Edge) {
 
 	g.edges[edge.From] = append(g.edges[edge.From], edge)
 	g.inEdges[edge.To] = append(g.inEdges[edge.To], edge)
+
+	if edge.Type == EdgeTypeImplements {
+		if fromNode, ok := g.nodes[edge.From]; ok {
+			g.byInterface[edge.To] = append(g.byInterface[edge.To], fromNode)
+		}
+		if toNode, ok := g.nodes[edge.To]; ok {
+			g.byTypeImpl[edge.From] = append(g.byTypeImpl[edge.From], toNode)
+		}
+	}
 }
 
 func (g *Graph) NodeCount() int {
@@ -216,6 +230,25 @@ func (g *Graph) RemoveNodesForPackage(pkg string) {
 			delete(g.byName, node.Name)
 		}
 	}
+
+	for ifaceID, impls := range g.byInterface {
+		filtered := impls[:0]
+		for _, impl := range impls {
+			if !nodeIDs[impl.ID] {
+				filtered = append(filtered, impl)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(g.byInterface, ifaceID)
+		} else {
+			g.byInterface[ifaceID] = filtered
+		}
+	}
+
+	for typeID := range nodeIDs {
+		delete(g.byTypeImpl, typeID)
+	}
+
 	delete(g.byPackage, pkg)
 }
 
