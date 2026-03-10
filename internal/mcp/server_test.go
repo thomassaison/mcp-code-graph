@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -460,4 +461,105 @@ func TestServer_GetFunctionByNameTool(t *testing.T) {
 	}
 
 	t.Logf("Result: %s", textContent3.Text)
+}
+
+func TestServer_GetImplementorsTool(t *testing.T) {
+	srv, err := NewServer(&Config{
+		DBPath:      t.TempDir() + "/test.db",
+		ProjectPath: ".",
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	iface := &graph.Node{
+		ID:      "type_io.Reader",
+		Type:    graph.NodeTypeInterface,
+		Package: "io",
+		Name:    "Reader",
+		Methods: []graph.Method{{Name: "Read", Signature: "Read(p []byte) (n int, err error)"}},
+	}
+	typ := &graph.Node{
+		ID:       "type_os.File",
+		Type:     graph.NodeTypeType,
+		Package:  "os",
+		Name:     "File",
+		Metadata: map[string]any{"kind": "struct"},
+	}
+
+	srv.graph.AddNode(iface)
+	srv.graph.AddNode(typ)
+	srv.graph.AddEdge(&graph.Edge{
+		From:     typ.ID,
+		To:       iface.ID,
+		Type:     graph.EdgeTypeImplements,
+		Metadata: map[string]any{"pointer_receiver": true},
+	})
+
+	result, err := srv.handleGetImplementors(context.Background(), map[string]interface{}{
+		"interface_id": "type_io.Reader",
+	})
+	if err != nil {
+		t.Fatalf("handleGetImplementors failed: %v", err)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &data); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	implementors := data["implementors"].([]interface{})
+	if len(implementors) != 1 {
+		t.Errorf("expected 1 implementor, got %d", len(implementors))
+	}
+}
+
+func TestServer_GetInterfacesTool(t *testing.T) {
+	srv, err := NewServer(&Config{
+		DBPath:      t.TempDir() + "/test.db",
+		ProjectPath: ".",
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	iface := &graph.Node{
+		ID:      "type_io.Reader",
+		Type:    graph.NodeTypeInterface,
+		Package: "io",
+		Name:    "Reader",
+	}
+	typ := &graph.Node{
+		ID:       "type_os.File",
+		Type:     graph.NodeTypeType,
+		Package:  "os",
+		Name:     "File",
+		Metadata: map[string]any{"kind": "struct"},
+	}
+
+	srv.graph.AddNode(iface)
+	srv.graph.AddNode(typ)
+	srv.graph.AddEdge(&graph.Edge{
+		From:     typ.ID,
+		To:       iface.ID,
+		Type:     graph.EdgeTypeImplements,
+		Metadata: map[string]any{"pointer_receiver": true},
+	})
+
+	result, err := srv.handleGetInterfaces(context.Background(), map[string]interface{}{
+		"type_id": "type_os.File",
+	})
+	if err != nil {
+		t.Fatalf("handleGetInterfaces failed: %v", err)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &data); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	interfaces := data["interfaces"].([]interface{})
+	if len(interfaces) != 1 {
+		t.Errorf("expected 1 interface, got %d", len(interfaces))
+	}
 }
