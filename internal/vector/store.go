@@ -73,13 +73,15 @@ func (s *Store) migrateIfNeeded() error {
 		var name, typ string
 		var dfltValue any
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
-			continue
+			return fmt.Errorf("scan table_info: %w", err)
 		}
 		if name == "summary_embedding" {
 			return nil // already on new schema
 		}
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate table_info: %w", err)
+	}
 
 	// Old schema or no table — drop and let initTables recreate
 	_, err = s.db.Exec(`DROP TABLE IF EXISTS embeddings`)
@@ -122,6 +124,9 @@ func (s *Store) loadCache() error {
 			summaryEmbedding: nullableBytesToFloat32(summaryBytes),
 			codeEmbedding:    nullableBytesToFloat32(codeBytes),
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate embeddings: %w", err)
 	}
 	return nil
 }

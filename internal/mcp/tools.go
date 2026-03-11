@@ -592,9 +592,6 @@ func (s *Server) semanticBehaviorSearch(ctx context.Context, query string, nodes
 	nodeIDs := make([]string, 0, len(nodes))
 	nodeByID := make(map[string]*graph.Node, len(nodes))
 	for _, node := range nodes {
-		if node.SummaryText() == "" {
-			continue
-		}
 		if err := s.ensureFunctionEmbedding(ctx, node); err != nil {
 			continue
 		}
