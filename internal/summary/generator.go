@@ -34,6 +34,9 @@ func (g *Generator) Generate(ctx context.Context, node *graph.Node) error {
 		Signature:    node.Signature,
 		Package:      node.Package,
 		Docstring:    node.Docstring,
+		File:         node.File,
+		Language:     "Go",
+		Code:         node.Code,
 	}
 
 	summary, err := g.provider.GenerateSummary(ctx, req)
@@ -60,6 +63,9 @@ func (g *Generator) GenerateAll(ctx context.Context, gr *graph.Graph) error {
 		slog.Log(ctx, debug.LevelTrace, "processing function for summary", "function", fn.Name)
 		if err := g.Generate(ctx, fn); err != nil {
 			continue
+		}
+		if fn.Summary != nil {
+			gr.SetNodeSummary(fn.ID, fn.Summary) //nolint:errcheck
 		}
 	}
 	return nil
