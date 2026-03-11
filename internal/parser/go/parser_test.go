@@ -1,6 +1,7 @@
 package goparser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,6 +180,94 @@ func main() {}
 
 	if mainFunc.Type != graph.NodeTypeFunction {
 		t.Errorf("main.Type = %v, want %v", mainFunc.Type, graph.NodeTypeFunction)
+	}
+}
+
+func TestParsePackage_ResolvesMethodCallsAcrossPackages(t *testing.T) {
+	// Create a module with two packages:
+	// - mypkg/store: defines Store struct with Add() method
+	// - mypkg/app: defines Run() that calls store.Add() via a *Store variable
+	tmpDir := t.TempDir()
+
+	// go.mod
+	goMod := "module example.com/testmod\n\ngo 1.21\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// mypkg/store/store.go
+	storeDir := filepath.Join(tmpDir, "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	storeCode := `package store
+
+type Store struct{}
+
+func (s *Store) Add(item string) {}
+`
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte(storeCode), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// mypkg/app/app.go
+	appDir := filepath.Join(tmpDir, "app")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appCode := `package app
+
+import "example.com/testmod/store"
+
+func Run(s *store.Store) {
+    s.Add("hello")
+}
+`
+	if err := os.WriteFile(filepath.Join(appDir, "app.go"), []byte(appCode), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New()
+	result, err := p.ParsePackage(tmpDir)
+	if err != nil {
+		t.Fatalf("ParsePackage() error = %v", err)
+	}
+
+	// Find the Run function
+	var runNode *graph.Node
+	for _, n := range result.Nodes {
+		if n.Name == "Run" {
+			runNode = n
+			break
+		}
+	}
+	if runNode == nil {
+		t.Fatal("Run function not found")
+	}
+
+	// Find the Add method
+	var addNode *graph.Node
+	for _, n := range result.Nodes {
+		if n.Name == "Add" {
+			addNode = n
+			break
+		}
+	}
+	if addNode == nil {
+		t.Fatal("Add method not found")
+	}
+
+	// Verify there is a calls edge from Run to Add
+	// e.To is the TypesInfo-resolved placeholder: func_example.com/testmod/store_Add
+	var foundEdge bool
+	for _, e := range result.Edges {
+		if e.From == runNode.ID && e.To == fmt.Sprintf("func_example.com/testmod/store_Add") {
+			foundEdge = true
+			break
+		}
+	}
+	if !foundEdge {
+		t.Errorf("no calls edge from Run to Add; Run.ID=%q Add.ID=%q\nedges: %v", runNode.ID, addNode.ID, result.Edges)
 	}
 }
 

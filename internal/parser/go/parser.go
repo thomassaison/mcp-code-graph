@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	goparser "go/parser"
 	"go/token"
+	"go/types"
 	"log/slog"
 	"os"
 	"strings"
@@ -28,7 +29,6 @@ func New() *GoParser {
 
 func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 	slog.Log(context.Background(), debug.LevelTrace, "parsing file", "path", path)
-	result := &parser.ParseResult{}
 
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -39,7 +39,17 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 		return nil, fmt.Errorf("parse file: %w", err)
 	}
 
-	pkgName := file.Name.Name
+	result := p.extractFromFile(file, src, file.Name.Name, nil)
+
+	slog.Log(context.Background(), debug.LevelTrace, "file parsed", "path", path, "functions", len(result.Nodes))
+	return result, nil
+}
+
+func (p *GoParser) extractFromFile(file *ast.File, src []byte, pkgName string, typesInfo *types.Info) *parser.ParseResult {
+	result := &parser.ParseResult{}
+
+	// Derive path from fset
+	path := p.fset.Position(file.Pos()).Filename
 
 	// Build import alias -> full import path map for resolving cross-package calls
 	importMap := make(map[string]string)
@@ -82,7 +92,7 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 
 		// Populate Code only for functions — methods are excluded intentionally
 		// (this iteration; they are not processed by the embedding pipeline).
-		if node.Type == graph.NodeTypeFunction {
+		if node.Type == graph.NodeTypeFunction && src != nil {
 			start := p.fset.Position(fn.Pos()).Offset
 			end := p.fset.Position(fn.End()).Offset
 			if start >= 0 && end <= len(src) && start < end {
@@ -99,7 +109,7 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 					return true
 				}
 
-				edgeTo := p.callEdgeTarget(call, pkgName, importMap)
+				edgeTo := p.callEdgeTarget(call, pkgName, importMap, typesInfo)
 				if edgeTo == "" {
 					return true
 				}
@@ -117,13 +127,12 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 		}
 	}
 
-	slog.Log(context.Background(), debug.LevelTrace, "file parsed", "path", path, "functions", len(result.Nodes))
-	return result, nil
+	return result
 }
 
 func (p *GoParser) ParsePackage(dir string) (*parser.ParseResult, error) {
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir:  dir,
 		Fset: p.fset,
 	}
@@ -140,10 +149,9 @@ func (p *GoParser) ParsePackage(dir string) (*parser.ParseResult, error) {
 
 		for _, file := range pkg.Syntax {
 			pos := p.fset.Position(file.Pos())
-			fileResult, err := p.ParseFile(pos.Filename)
-			if err != nil {
-				continue
-			}
+			src, _ := os.ReadFile(pos.Filename) // for Code extraction; ok if read fails
+
+			fileResult := p.extractFromFile(file, src, shortName, pkg.TypesInfo)
 
 			// Rewrite short package names to full import paths so that
 			// function nodes match the convention used by the type checker.
@@ -258,11 +266,20 @@ func (p *GoParser) typeString(expr ast.Expr) string {
 	}
 }
 
-func (p *GoParser) callEdgeTarget(call *ast.CallExpr, currentPkg string, importMap map[string]string) string {
+func (p *GoParser) callEdgeTarget(call *ast.CallExpr, currentPkg string, importMap map[string]string, typesInfo *types.Info) string {
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
 		return fmt.Sprintf("func_%s_%s", currentPkg, fn.Name)
 	case *ast.SelectorExpr:
+		// Try TypesInfo first — resolves method calls on struct variables and chained selectors
+		if typesInfo != nil {
+			if sel, ok := typesInfo.Selections[fn]; ok {
+				if obj := sel.Obj(); obj.Pkg() != nil {
+					return fmt.Sprintf("func_%s_%s", obj.Pkg().Path(), obj.Name())
+				}
+			}
+		}
+		// Fallback: check if X is an import alias (package-qualified call)
 		if ident, ok := fn.X.(*ast.Ident); ok {
 			if importPath, ok := importMap[ident.Name]; ok {
 				return fmt.Sprintf("func_%s_%s", importPath, fn.Sel.Name)
