@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
-	"github.com/thomassaison/mcp-code-graph/internal/math"
 )
 
 type Tool struct {
@@ -252,23 +250,41 @@ func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (s
 
 func (s *Server) ensureFunctionEmbedding(ctx context.Context, node *graph.Node) error {
 	slog.Log(ctx, debug.LevelTrace, "ensuring function embedding", "function", node.Name)
+
+	hasSummary, hasCode := s.vector.HasEmbeddings(node.ID)
+	if hasSummary && hasCode {
+		return nil // already fully embedded
+	}
+
 	if node.Summary == nil || node.Summary.Text == "" {
 		if err := s.summary.Generate(ctx, node); err != nil {
 			return fmt.Errorf("generate summary: %w", err)
 		}
+		if node.Summary != nil {
+			s.graph.SetNodeSummary(node.ID, node.Summary) //nolint:errcheck
+		}
 	}
 
-	text := node.SummaryText()
-	if text == "" {
-		text = fmt.Sprintf("%s %s", node.Name, node.Signature)
+	summaryText := node.SummaryText()
+	if summaryText == "" {
+		summaryText = fmt.Sprintf("%s %s", node.Name, node.Signature)
 	}
 
-	embedding, err := s.embeddingProvider.Embed(ctx, text)
+	summaryEmb, err := s.embeddingProvider.Embed(ctx, summaryText)
 	if err != nil {
-		return fmt.Errorf("embed: %w", err)
+		return fmt.Errorf("embed summary: %w", err)
 	}
 
-	if err := s.vector.Insert(node.ID, text, embedding); err != nil {
+	var codeEmb []float32
+	if node.Code != "" {
+		codeEmb, err = s.embeddingProvider.Embed(ctx, node.Code)
+		if err != nil {
+			slog.Warn("failed to embed code, proceeding with summary only", "function", node.Name, "error", err)
+			codeEmb = nil
+		}
+	}
+
+	if err := s.vector.Insert(node.ID, summaryText, summaryEmb, node.Code, codeEmb); err != nil {
 		return fmt.Errorf("store embedding: %w", err)
 	}
 
@@ -573,49 +589,35 @@ func (s *Server) semanticBehaviorSearch(ctx context.Context, query string, nodes
 		return s.formatBehaviorResults(nodes, limit), nil
 	}
 
-	type scoredNode struct {
-		node  *graph.Node
-		score float32
-	}
-
-	var scoredNodes []scoredNode
+	nodeIDs := make([]string, 0, len(nodes))
+	nodeByID := make(map[string]*graph.Node, len(nodes))
 	for _, node := range nodes {
-		summary := node.SummaryText()
-		if summary == "" {
+		if node.SummaryText() == "" {
 			continue
 		}
-
 		if err := s.ensureFunctionEmbedding(ctx, node); err != nil {
 			continue
 		}
-
-		nodeEmbedding, err := s.vector.GetEmbedding(node.ID)
-		if err != nil {
-			continue
-		}
-
-		score := math.CosineSimilarity(queryEmbedding, nodeEmbedding)
-		scoredNodes = append(scoredNodes, scoredNode{node: node, score: score})
+		nodeIDs = append(nodeIDs, node.ID)
+		nodeByID[node.ID] = node
 	}
 
-	sort.Slice(scoredNodes, func(i, j int) bool {
-		return scoredNodes[i].score > scoredNodes[j].score
-	})
-
-	if len(scoredNodes) > limit {
-		scoredNodes = scoredNodes[:limit]
-	}
+	scored := s.vector.ScoreNodes(queryEmbedding, nodeIDs, limit)
 
 	var results []map[string]any
-	for _, sn := range scoredNodes {
+	for _, r := range scored {
+		node, ok := nodeByID[r.NodeID]
+		if !ok {
+			continue
+		}
 		results = append(results, map[string]any{
-			"id":        sn.node.ID,
-			"name":      sn.node.Name,
-			"package":   sn.node.Package,
-			"signature": sn.node.Signature,
-			"behaviors": sn.node.Metadata["behaviors"],
-			"summary":   sn.node.SummaryText(),
-			"score":     sn.score,
+			"id":        node.ID,
+			"name":      node.Name,
+			"package":   node.Package,
+			"signature": node.Signature,
+			"behaviors": node.Metadata["behaviors"],
+			"summary":   node.SummaryText(),
+			"score":     r.Score,
 		})
 	}
 

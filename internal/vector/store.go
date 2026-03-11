@@ -18,8 +18,10 @@ type SearchResult struct {
 }
 
 type cacheEntry struct {
-	text      string
-	embedding []float32
+	summaryText      string
+	codeText         string
+	summaryEmbedding []float32
+	codeEmbedding    []float32
 }
 
 type Store struct {
@@ -36,6 +38,9 @@ func NewStore(dbPath string) (*Store, error) {
 		cache:  make(map[string]cacheEntry),
 	}
 	if err := store.open(); err != nil {
+		return nil, err
+	}
+	if err := store.migrateIfNeeded(); err != nil {
 		return nil, err
 	}
 	if err := store.initTables(); err != nil {
@@ -56,12 +61,39 @@ func (s *Store) open() error {
 	return nil
 }
 
+func (s *Store) migrateIfNeeded() error {
+	rows, err := s.db.Query(`PRAGMA table_info(embeddings)`)
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dfltValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if name == "summary_embedding" {
+			return nil // already on new schema
+		}
+	}
+	rows.Close()
+
+	// Old schema or no table — drop and let initTables recreate
+	_, err = s.db.Exec(`DROP TABLE IF EXISTS embeddings`)
+	return err
+}
+
 func (s *Store) initTables() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS embeddings (
-			node_id TEXT PRIMARY KEY,
-			text TEXT NOT NULL,
-			embedding BLOB
+			node_id           TEXT PRIMARY KEY,
+			summary_text      TEXT,
+			code_text         TEXT,
+			summary_embedding BLOB,
+			code_embedding    BLOB
 		);
 		CREATE INDEX IF NOT EXISTS idx_embeddings_node ON embeddings(node_id);
 	`)
@@ -72,27 +104,33 @@ func (s *Store) initTables() error {
 }
 
 func (s *Store) loadCache() error {
-	rows, err := s.db.Query(`SELECT node_id, text, embedding FROM embeddings`)
+	rows, err := s.db.Query(`SELECT node_id, summary_text, code_text, summary_embedding, code_embedding FROM embeddings`)
 	if err != nil {
 		return fmt.Errorf("load cache: %w", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var nodeID, text string
-		var embeddingBytes []byte
-		if err := rows.Scan(&nodeID, &text, &embeddingBytes); err != nil {
+		var nodeID, summaryText, codeText string
+		var summaryBytes, codeBytes []byte
+		if err := rows.Scan(&nodeID, &summaryText, &codeText, &summaryBytes, &codeBytes); err != nil {
 			continue
 		}
-
-		embedding := bytesToFloat32(embeddingBytes)
 		s.cache[nodeID] = cacheEntry{
-			text:      text,
-			embedding: embedding,
+			summaryText:      summaryText,
+			codeText:         codeText,
+			summaryEmbedding: nullableBytesToFloat32(summaryBytes),
+			codeEmbedding:    nullableBytesToFloat32(codeBytes),
 		}
 	}
-
 	return nil
+}
+
+func nullableBytesToFloat32(b []byte) []float32 {
+	if b == nil {
+		return nil
+	}
+	return bytesToFloat32(b)
 }
 
 func bytesToFloat32(b []byte) []float32 {
@@ -119,26 +157,59 @@ func float32ToBytes(f []float32) []byte {
 	return b
 }
 
-func (s *Store) Insert(nodeID, text string, embedding []float32) error {
-	embeddingBytes := float32ToBytes(embedding)
+// Insert stores both embeddings for a node. Either embedding slice may be nil
+// (the corresponding column is set to NULL). If a row already exists for
+// nodeID, it is fully replaced.
+func (s *Store) Insert(
+	nodeID string,
+	summaryText string, summaryEmb []float32,
+	codeText string, codeEmb []float32,
+) error {
+	var summaryBytes []byte
+	if summaryEmb != nil {
+		summaryBytes = float32ToBytes(summaryEmb)
+	}
+	var codeBytes []byte
+	if codeEmb != nil {
+		codeBytes = float32ToBytes(codeEmb)
+	}
 
 	_, err := s.db.Exec(`
-		INSERT OR REPLACE INTO embeddings (node_id, text, embedding)
-		VALUES (?, ?, ?)
-	`, nodeID, text, embeddingBytes)
+		INSERT OR REPLACE INTO embeddings (node_id, summary_text, code_text, summary_embedding, code_embedding)
+		VALUES (?, ?, ?, ?, ?)
+	`, nodeID, summaryText, codeText, summaryBytes, codeBytes)
 	if err != nil {
 		return err
 	}
 
-	// Update cache
 	s.mu.Lock()
 	s.cache[nodeID] = cacheEntry{
-		text:      text,
-		embedding: embedding,
+		summaryText:      summaryText,
+		codeText:         codeText,
+		summaryEmbedding: summaryEmb,
+		codeEmbedding:    codeEmb,
 	}
 	s.mu.Unlock()
 
 	return nil
+}
+
+// weightedScore computes the combined similarity score for a cache entry.
+// Returns 0 if the entry has no usable embeddings.
+func weightedScore(query []float32, entry cacheEntry) float32 {
+	hasSummary := entry.summaryEmbedding != nil
+	hasCode := entry.codeEmbedding != nil
+	switch {
+	case hasSummary && hasCode:
+		return 0.6*math.CosineSimilarity(query, entry.summaryEmbedding) +
+			0.4*math.CosineSimilarity(query, entry.codeEmbedding)
+	case hasSummary:
+		return math.CosineSimilarity(query, entry.summaryEmbedding)
+	case hasCode:
+		return math.CosineSimilarity(query, entry.codeEmbedding)
+	default:
+		return 0
+	}
 }
 
 func (s *Store) Search(query []float32, limit int) ([]SearchResult, error) {
@@ -147,10 +218,13 @@ func (s *Store) Search(query []float32, limit int) ([]SearchResult, error) {
 
 	var results []SearchResult
 	for nodeID, entry := range s.cache {
-		score := math.CosineSimilarity(query, entry.embedding)
+		score := weightedScore(query, entry)
+		if score == 0 {
+			continue
+		}
 		results = append(results, SearchResult{
 			NodeID: nodeID,
-			Text:   entry.text,
+			Text:   entry.summaryText,
 			Score:  score,
 		})
 	}
@@ -158,31 +232,62 @@ func (s *Store) Search(query []float32, limit int) ([]SearchResult, error) {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
 	})
-
 	if len(results) > limit {
 		results = results[:limit]
 	}
-
 	return results, nil
+}
+
+// HasEmbeddings reports whether summary and code embeddings exist for nodeID.
+// Reads from the in-memory cache only.
+func (s *Store) HasEmbeddings(nodeID string) (hasSummary, hasCode bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entry, ok := s.cache[nodeID]
+	if !ok {
+		return false, false
+	}
+	return entry.summaryEmbedding != nil, entry.codeEmbedding != nil
+}
+
+// ScoreNodes ranks the provided nodeIDs by weighted cosine similarity
+// against query. Only nodes present in the cache are scored.
+func (s *Store) ScoreNodes(query []float32, nodeIDs []string, limit int) []SearchResult {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nodeSet := make(map[string]struct{}, len(nodeIDs))
+	for _, id := range nodeIDs {
+		nodeSet[id] = struct{}{}
+	}
+
+	var results []SearchResult
+	for nodeID, entry := range s.cache {
+		if _, ok := nodeSet[nodeID]; !ok {
+			continue
+		}
+		score := weightedScore(query, entry)
+		if score == 0 {
+			continue
+		}
+		results = append(results, SearchResult{
+			NodeID: nodeID,
+			Text:   entry.summaryText,
+			Score:  score,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results
 }
 
 func (s *Store) Close() {
 	if s.db != nil {
 		s.db.Close()
 	}
-}
-
-func (s *Store) GetEmbedding(nodeID string) ([]float32, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	entry, ok := s.cache[nodeID]
-	if !ok {
-		return nil, fmt.Errorf("embedding not found for node %s", nodeID)
-	}
-
-	// Return a copy to prevent mutation
-	embedding := make([]float32, len(entry.embedding))
-	copy(embedding, entry.embedding)
-	return embedding, nil
 }
