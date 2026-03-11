@@ -7,6 +7,7 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
@@ -29,12 +30,30 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 	slog.Log(context.Background(), debug.LevelTrace, "parsing file", "path", path)
 	result := &parser.ParseResult{}
 
-	file, err := goparser.ParseFile(p.fset, path, nil, goparser.ParseComments)
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	file, err := goparser.ParseFile(p.fset, path, src, goparser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse file: %w", err)
 	}
 
 	pkgName := file.Name.Name
+
+	// Build import alias -> full import path map for resolving cross-package calls
+	importMap := make(map[string]string)
+	for _, imp := range file.Imports {
+		importPath := strings.Trim(imp.Path.Value, `"`)
+		var alias string
+		if imp.Name != nil {
+			alias = imp.Name.Name
+		} else {
+			parts := strings.Split(importPath, "/")
+			alias = parts[len(parts)-1]
+		}
+		importMap[alias] = importPath
+	}
 
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -60,6 +79,17 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 		}
 
 		node.ID = node.GenerateID()
+
+		// Populate Code only for functions — methods are excluded intentionally
+		// (this iteration; they are not processed by the embedding pipeline).
+		if node.Type == graph.NodeTypeFunction {
+			start := p.fset.Position(fn.Pos()).Offset
+			end := p.fset.Position(fn.End()).Offset
+			if start >= 0 && end <= len(src) && start < end {
+				node.Code = string(src[start:end])
+			}
+		}
+
 		result.Nodes = append(result.Nodes, node)
 
 		if fn.Body != nil {
@@ -69,14 +99,14 @@ func (p *GoParser) ParseFile(path string) (*parser.ParseResult, error) {
 					return true
 				}
 
-				calleeName := p.callName(call)
-				if calleeName == "" {
+				edgeTo := p.callEdgeTarget(call, pkgName, importMap)
+				if edgeTo == "" {
 					return true
 				}
 
 				edge := &graph.Edge{
 					From:     node.ID,
-					To:       fmt.Sprintf("func_%s_%s", pkgName, calleeName),
+					To:       edgeTo,
 					Type:     graph.EdgeTypeCalls,
 					Metadata: make(map[string]any),
 				}
@@ -228,12 +258,17 @@ func (p *GoParser) typeString(expr ast.Expr) string {
 	}
 }
 
-func (p *GoParser) callName(call *ast.CallExpr) string {
+func (p *GoParser) callEdgeTarget(call *ast.CallExpr, currentPkg string, importMap map[string]string) string {
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
-		return fn.Name
+		return fmt.Sprintf("func_%s_%s", currentPkg, fn.Name)
 	case *ast.SelectorExpr:
-		return fn.Sel.Name
+		if ident, ok := fn.X.(*ast.Ident); ok {
+			if importPath, ok := importMap[ident.Name]; ok {
+				return fmt.Sprintf("func_%s_%s", importPath, fn.Sel.Name)
+			}
+		}
+		return fmt.Sprintf("func_%s_%s", currentPkg, fn.Sel.Name)
 	}
 	return ""
 }

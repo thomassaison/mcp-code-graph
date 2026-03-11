@@ -23,6 +23,7 @@ type Node struct {
 	Column    int
 	Signature string
 	Docstring string
+	Code      string         `json:"-"` // raw source, not persisted
 	Summary   *Summary
 	Methods   []Method `json:"methods,omitempty"` // For interfaces: required method signatures
 	Metadata  map[string]any

@@ -3,6 +3,7 @@ package goparser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/thomassaison/mcp-code-graph/internal/graph"
@@ -178,5 +179,63 @@ func main() {}
 
 	if mainFunc.Type != graph.NodeTypeFunction {
 		t.Errorf("main.Type = %v, want %v", mainFunc.Type, graph.NodeTypeFunction)
+	}
+}
+
+func TestParseFile_ExtractsCode(t *testing.T) {
+	tmpDir := t.TempDir()
+	goFile := filepath.Join(tmpDir, "test.go")
+
+	code := `package main
+
+func add(a, b int) int {
+    return a + b
+}
+
+func main() {}
+`
+	if err := os.WriteFile(goFile, []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New()
+	result, err := p.ParseFile(goFile)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	var addNode *graph.Node
+	for _, n := range result.Nodes {
+		if n.Name == "add" {
+			addNode = n
+			break
+		}
+	}
+	if addNode == nil {
+		t.Fatal("add function not found")
+	}
+
+	if addNode.Code == "" {
+		t.Error("add.Code is empty, want non-empty source")
+	}
+	if !strings.Contains(addNode.Code, "return a + b") {
+		t.Errorf("add.Code = %q, want it to contain the function body", addNode.Code)
+	}
+	if !strings.HasPrefix(addNode.Code, "func add") {
+		t.Errorf("add.Code = %q, want it to start with 'func add'", addNode.Code)
+	}
+
+	var mainNode *graph.Node
+	for _, n := range result.Nodes {
+		if n.Name == "main" {
+			mainNode = n
+			break
+		}
+	}
+	if mainNode == nil {
+		t.Fatal("main function not found")
+	}
+	if mainNode.Code == "" {
+		t.Error("main.Code is empty, want non-empty source")
 	}
 }
