@@ -84,7 +84,7 @@ func (p *OpenAIProvider) doChatCompletion(ctx context.Context, messages []openAI
 	if err != nil {
 		return "", fmt.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -114,19 +114,16 @@ func (p *OpenAIProvider) doChatCompletion(ctx context.Context, messages []openAI
 func (p *OpenAIProvider) GenerateSummary(ctx context.Context, req SummaryRequest) (string, error) {
 	prompt := buildSummaryPrompt(req)
 	messages := []openAIMessage{
-		{Role: "system", Content: `You are a Go code documentation expert. Generate a single-line summary that captures:
-1. The function's primary purpose (start with a strong action verb)
-2. Key behavior (error handling, side effects, concurrency)
-3. Pattern tag if applicable: [Constructor], [Middleware], [HTTP Handler], [Factory], [Interface impl]
-
-Format: [Tag] <action verb> <purpose>. <behavior notes>.
-
-Examples:
-- [Constructor] Creates a new Server instance with configured timeouts. Thread-safe.
-- [HTTP Handler] Dispatches incoming requests to appropriate handlers. Returns 400 on invalid input.
-- Parses JSON configuration into a Config struct. Returns error on malformed input.
-
-Respond with ONLY the summary, no additional text.`},
+		{Role: "system", Content: `You are a senior software engineer performing static code analysis.
+Your task is to summarize a single function in a structured and precise way so it can be indexed for semantic code search.
+Rules:
+- Be factual and concise.
+- Do not repeat the code.
+- Infer intent from the implementation.
+- Identify side effects and external dependencies.
+- Prefer short technical wording.
+- Do not invent information that cannot be inferred from the code.
+Return ONLY valid JSON matching the schema.`},
 		{Role: "user", Content: prompt},
 	}
 	return p.doChatCompletion(ctx, messages)
@@ -140,23 +137,62 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 func buildSummaryPrompt(req SummaryRequest) string {
 	var sb strings.Builder
 
-	sb.WriteString("Generate a one-line summary for this Go function:\n\n")
-	sb.WriteString(fmt.Sprintf("Package: %s\n", req.Package))
-	sb.WriteString(fmt.Sprintf("Function: %s\n", req.FunctionName))
-
-	if req.Signature != "" {
-		sb.WriteString(fmt.Sprintf("Signature: %s\n", req.Signature))
+	lang := req.Language
+	if lang == "" {
+		lang = "Go"
 	}
 
-	if req.Docstring != "" {
-		sb.WriteString(fmt.Sprintf("Documentation: %s\n", req.Docstring))
+	code := req.Code
+	if code == "" {
+		var fb strings.Builder
+		if req.Docstring != "" {
+			fb.WriteString("// ")
+			fb.WriteString(req.Docstring)
+			fb.WriteString("\n")
+		}
+		fb.WriteString(req.Signature)
+		code = fb.String()
 	}
 
-	if req.Code != "" {
-		sb.WriteString(fmt.Sprintf("Code:\n%s\n", req.Code))
+	sb.WriteString("Analyze the following function and produce a structured summary.\n\n")
+	fmt.Fprintf(&sb, "Language: %s\n", lang)
+	if req.File != "" {
+		fmt.Fprintf(&sb, "File: %s\n", req.File)
 	}
+	fmt.Fprintf(&sb, "\nFunction code:\n```%s\n%s\n```\n", lang, code)
+	sb.WriteString(`
+Return JSON with this schema:
 
-	sb.WriteString("\nIdentify: pattern (constructor/middleware/handler/factory), error behavior, side effects, concurrency usage, and any interfaces implemented.\n")
-
+{
+  "name": "function name",
+  "purpose": "one sentence describing what the function does",
+  "inputs": [
+    {
+      "name": "parameter name",
+      "type": "type if known",
+      "description": "short description"
+    }
+  ],
+  "outputs": {
+    "type": "return type if known",
+    "description": "what the function returns"
+  },
+  "side_effects": [
+    "writes to database",
+    "network call",
+    "filesystem access",
+    "mutates global state"
+  ],
+  "dependencies": [
+    "external function or API used"
+  ],
+  "error_handling": "how errors are handled if visible",
+  "algorithm": "short description of the algorithm or logic used",
+  "keywords": [
+    "authentication",
+    "hashing",
+    "caching"
+  ]
+}`)
 	return sb.String()
 }

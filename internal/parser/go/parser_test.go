@@ -1,7 +1,6 @@
 package goparser
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,7 +260,7 @@ func Run(s *store.Store) {
 	// e.To is the TypesInfo-resolved placeholder: func_example.com/testmod/store_Add
 	var foundEdge bool
 	for _, e := range result.Edges {
-		if e.From == runNode.ID && e.To == fmt.Sprintf("func_example.com/testmod/store_Add") {
+		if e.From == runNode.ID && e.To == "func_example.com/testmod/store_Add" {
 			foundEdge = true
 			break
 		}

@@ -36,20 +36,20 @@ func (a *LLMAnalyzer) buildPrompt(req AnalysisRequest) string {
 	sb.WriteString("Analyze this Go function and identify which behaviors it exhibits.\n\n")
 	sb.WriteString("Available behaviors:\n")
 	for _, b := range AllBehaviors() {
-		sb.WriteString(fmt.Sprintf("- %s\n", b))
+		fmt.Fprintf(&sb, "- %s\n", b)
 	}
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Package: %s\n", req.PackageName))
-	sb.WriteString(fmt.Sprintf("Function: %s\n", req.FunctionName))
+	fmt.Fprintf(&sb, "Package: %s\n", req.PackageName)
+	fmt.Fprintf(&sb, "Function: %s\n", req.FunctionName)
 
 	if req.Signature != "" {
-		sb.WriteString(fmt.Sprintf("Signature: %s\n", req.Signature))
+		fmt.Fprintf(&sb, "Signature: %s\n", req.Signature)
 	}
 	if req.Docstring != "" {
-		sb.WriteString(fmt.Sprintf("Documentation: %s\n", req.Docstring))
+		fmt.Fprintf(&sb, "Documentation: %s\n", req.Docstring)
 	}
 	if req.Code != "" {
-		sb.WriteString(fmt.Sprintf("Code:\n%s\n", req.Code))
+		fmt.Fprintf(&sb, "Code:\n%s\n", req.Code)
 	}
 
 	sb.WriteString("\nRespond with ONLY a JSON object: {\"behaviors\": [\"behavior1\", \"behavior2\"]}\n")

@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -134,7 +133,7 @@ func LogError(msg string) {
 	}
 
 	g := graph.New()
-	analyzer := &mockBehaviorAnalyzer{behaviors: []string{"logging"}}
+	analyzer := behavior.NewMockAnalyzer().WithBehaviors([]string{"logging"})
 	idx := NewWithBehaviorAnalyzer(g, goparser.New(), analyzer)
 
 	if err := idx.IndexModule(tmpDir); err != nil {
@@ -177,10 +176,110 @@ func LogError(msg string) {
 	}
 }
 
-type mockBehaviorAnalyzer struct {
-	behaviors []string
+func TestIndexModule_graphConsistent(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
+func Foo() {}
+func Bar() { Foo() }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := graph.New()
+	idx := New(g, goparser.New())
+
+	if err := idx.IndexModule(tmpDir); err != nil {
+		t.Fatalf("IndexModule() error = %v", err)
+	}
+
+	nodes := g.AllNodes()
+	if len(nodes) == 0 {
+		t.Fatal("graph should have nodes after IndexModule")
+	}
+
+	for _, n := range nodes {
+		if _, err := g.GetNode(n.ID); err != nil {
+			t.Errorf("node %s not found via GetNode after IndexModule", n.ID)
+		}
+	}
 }
 
-func (m *mockBehaviorAnalyzer) Analyze(ctx context.Context, req behavior.AnalysisRequest) ([]string, error) {
-	return m.behaviors, nil
+func TestIndexModule_parseFailureLeavesOriginal(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
+func Existing() {}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := graph.New()
+	idx := New(g, goparser.New())
+
+	if err := idx.IndexModule(tmpDir); err != nil {
+		t.Fatalf("first IndexModule() error = %v", err)
+	}
+	originalCount := g.NodeCount()
+	if originalCount == 0 {
+		t.Fatal("expected nodes after first index")
+	}
+
+	// Overwrite go.mod with invalid content to trigger parse error
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("invalid content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := idx.IndexModule(tmpDir)
+	if err == nil {
+		t.Fatal("expected error when indexing with invalid go.mod")
+	}
+
+	if g.NodeCount() != originalCount {
+		t.Errorf("NodeCount after failed reindex = %d, want %d (original preserved)", g.NodeCount(), originalCount)
+	}
+}
+
+func TestIndexModule_multiplePackages(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(tmpDir, "pkg1")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
+import "test/pkg1"
+func Main() { pkg1.Do() }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "pkg1.go"), []byte(`package pkg1
+func Do() {}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := graph.New()
+	idx := New(g, goparser.New())
+
+	if err := idx.IndexModule(tmpDir); err != nil {
+		t.Fatalf("IndexModule() error = %v", err)
+	}
+
+	if g.NodeCount() == 0 {
+		t.Fatal("expected nodes after indexing multiple packages")
+	}
+
+	packages := g.AllPackages()
+	if len(packages) < 2 {
+		t.Errorf("expected at least 2 packages, got %d: %v", len(packages), packages)
+	}
 }

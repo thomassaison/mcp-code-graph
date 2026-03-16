@@ -124,10 +124,10 @@ func TestVectorStore_NoEmbeddings_ExcludedFromSearch(t *testing.T) {
 func TestVectorStore_HasEmbeddings(t *testing.T) {
 	store := newTestStore(t)
 
-	store.Insert("both", "s", []float32{1}, "c", []float32{1})    //nolint:errcheck
-	store.Insert("summary-only", "s", []float32{1}, "", nil)       //nolint:errcheck
-	store.Insert("code-only", "", nil, "c", []float32{1})          //nolint:errcheck
-	store.Insert("neither", "", nil, "", nil)                      //nolint:errcheck
+	store.Insert("both", "s", []float32{1}, "c", []float32{1}) //nolint:errcheck
+	store.Insert("summary-only", "s", []float32{1}, "", nil)   //nolint:errcheck
+	store.Insert("code-only", "", nil, "c", []float32{1})      //nolint:errcheck
+	store.Insert("neither", "", nil, "", nil)                  //nolint:errcheck
 
 	tests := []struct {
 		nodeID      string
@@ -190,6 +190,91 @@ func TestVectorStore_Persistence(t *testing.T) {
 	hasSummary, hasCode := s2.HasEmbeddings("fn1")
 	if !hasSummary || !hasCode {
 		t.Errorf("HasEmbeddings after reload = (%v, %v), want (true, true)", hasSummary, hasCode)
+	}
+}
+
+func TestVectorStore_InsertNilEmbeddings(t *testing.T) {
+	store := newTestStore(t)
+
+	err := store.Insert("fn1", "summary text", nil, "code text", nil)
+	if err != nil {
+		t.Fatalf("Insert with nil embeddings: %v", err)
+	}
+
+	hasSummary, hasCode := store.HasEmbeddings("fn1")
+	if hasSummary {
+		t.Error("hasSummary should be false for nil summary embedding")
+	}
+	if hasCode {
+		t.Error("hasCode should be false for nil code embedding")
+	}
+}
+
+func TestVectorStore_InsertDuplicateNodeID(t *testing.T) {
+	store := newTestStore(t)
+
+	if err := store.Insert("fn1", "original", []float32{1, 0}, "code", []float32{0, 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Insert("fn1", "updated", []float32{0, 1}, "new code", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.Search([]float32{0, 1}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result after duplicate insert, got %d", len(results))
+	}
+	if results[0].Text != "updated" {
+		t.Errorf("expected updated summary text, got %q", results[0].Text)
+	}
+}
+
+func TestVectorStore_HasEmbeddings_missingNode(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+
+	hasSummary, hasCode := store.HasEmbeddings("nonexistent")
+	if hasSummary || hasCode {
+		t.Errorf("HasEmbeddings(nonexistent) = (%v, %v), want (false, false)", hasSummary, hasCode)
+	}
+}
+
+func TestVectorStore_ScoreNodes_emptyNodeList(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	store.Insert("fn1", "s", []float32{1, 0}, "c", []float32{0, 1}) //nolint:errcheck
+
+	results := store.ScoreNodes([]float32{1, 0}, []string{}, 10)
+	if len(results) != 0 {
+		t.Errorf("ScoreNodes with empty nodeIDs returned %d results, want 0", len(results))
+	}
+}
+
+func TestVectorStore_Search_noEmbeddingsInStore(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+
+	results, err := store.Search([]float32{1, 0}, 10)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("Search on empty store returned %d results, want 0", len(results))
+	}
+}
+
+func TestVectorStore_ScoreNodes_noMatchingNodes(t *testing.T) {
+	store := newTestStore(t)
+	store.Insert("fn1", "s", []float32{1, 0}, "c", []float32{0, 1}) //nolint:errcheck
+
+	// Score with nodeIDs that don't exist in the store
+	results := store.ScoreNodes([]float32{1, 0}, []string{"nonexistent1", "nonexistent2"}, 10)
+	if len(results) != 0 {
+		t.Errorf("ScoreNodes with non-matching nodeIDs returned %d results, want 0", len(results))
 	}
 }
 

@@ -15,7 +15,7 @@ func TestOpenAIProvider_Embed(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"data": [{
 				"embedding": [0.1, 0.2, 0.3],
 				"index": 0
@@ -50,7 +50,7 @@ func TestOpenAIProvider_EmbedBatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"data": [
 				{"embedding": [0.1, 0.2, 0.3], "index": 0},
 				{"embedding": [0.4, 0.5, 0.6], "index": 1}

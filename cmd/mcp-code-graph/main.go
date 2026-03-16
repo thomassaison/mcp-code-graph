@@ -12,10 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/thomassaison/mcp-code-graph/internal/debug"
 	"github.com/thomassaison/mcp-code-graph/internal/embedding"
+	"github.com/thomassaison/mcp-code-graph/internal/indexer"
 	"github.com/thomassaison/mcp-code-graph/internal/llm"
 	"github.com/thomassaison/mcp-code-graph/internal/mcp"
 	"github.com/thomassaison/mcp-code-graph/internal/web"
@@ -83,16 +85,77 @@ func main() {
 		log.Fatalf("Failed to create server: %v", err)
 	}
 
-	// Index the project first (before starting MCP protocol)
-	if err := server.IndexProject(); err != nil {
-		log.Fatalf("Failed to index project: %v", err)
-	}
+	// Load persisted graph data synchronously — fast (<1s), makes tools usable immediately
+	server.LoadGraph()
+	slog.Info("MCP Code Graph server starting",
+		"project", projectPath,
+		"loaded_nodes", server.Graph().NodeCount(),
+	)
 
-	// Log startup info to stderr (stdout is used for MCP protocol)
-	slog.Info("MCP Code Graph server starting")
-	slog.Info("project", "path", projectPath)
-	slog.Info("database", "path", dbPath)
-	slog.Info("indexed", "functions", server.Graph().NodeCount())
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Create and start MCP server FIRST so it can respond to initialize immediately.
+	mcpSrv := mcpserver.NewMCPServer(
+		"mcp-code-graph",
+		version,
+		mcpserver.WithToolCapabilities(true),
+		mcpserver.WithResourceCapabilities(true, true),
+	)
+
+	// Register tools and resources
+	server.RegisterTools(mcpSrv)
+	server.RegisterResources(mcpSrv)
+
+	// Start MCP protocol on stdio (must be first so the client doesn't timeout).
+	// When the client disconnects (stdin closes), trigger graceful shutdown.
+	go func() {
+		if err := mcpserver.ServeStdio(mcpSrv); err != nil {
+			slog.Error("MCP server error", "error", err)
+		}
+		// Client disconnected — trigger shutdown
+		sigChan <- syscall.SIGTERM
+	}()
+
+	// Reindex project in the background. Tools work immediately with loaded data;
+	// the graph's RWMutex handles concurrent reads/writes safely.
+	server.PrepareAsyncIndex()
+	var (
+		watcher   *indexer.Watcher
+		indexDone = make(chan struct{})
+	)
+	go func() {
+		defer close(indexDone)
+
+		if err := server.IndexProject(); err != nil {
+			slog.Error("Failed to index project", "error", err)
+			return
+		}
+
+		server.MarkReady()
+		slog.Info("Index complete", "functions", server.Graph().NodeCount())
+
+		// Start filesystem watcher for incremental re-indexing
+		var watcherErr error
+		watcher, watcherErr = server.WatchProject(500 * time.Millisecond)
+		if watcherErr != nil {
+			slog.Warn("Failed to create file watcher (incremental updates disabled)", "error", watcherErr)
+		} else {
+			if err := watcher.Watch(projectPath); err != nil {
+				slog.Warn("Failed to start file watcher", "error", err)
+				watcher.Close()
+				watcher = nil
+			} else {
+				slog.Info("Watching for file changes", "path", projectPath)
+			}
+		}
+
+		// Generate summaries in background (non-critical)
+		if err := server.GenerateSummaries(context.Background()); err != nil {
+			slog.Warn("failed to generate summaries", "error", err)
+		}
+	}()
 
 	// Start web server if configured
 	var httpSrv *http.Server
@@ -108,38 +171,23 @@ func main() {
 		}()
 	}
 
-	// Setup signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Create MCP server with capabilities
-	mcpSrv := mcpserver.NewMCPServer(
-		"mcp-code-graph",
-		version,
-		mcpserver.WithToolCapabilities(true),
-		mcpserver.WithResourceCapabilities(true, true),
-	)
-
-	// Register tools and resources
-	server.RegisterTools(mcpSrv)
-	server.RegisterResources(mcpSrv)
-
-	// Start MCP server in goroutine
-	go func() {
-		if err := mcpserver.ServeStdio(mcpSrv); err != nil {
-			log.Printf("Server error: %v", err)
-		}
-	}()
-
 	// Wait for shutdown signal
 	<-sigChan
 	slog.Info("Shutting down...")
+
+	// Wait for background indexing to finish so we don't race on the DB
+	<-indexDone
 
 	// Graceful shutdown
 	if httpSrv != nil {
 		if err := httpSrv.Shutdown(context.Background()); err != nil {
 			slog.Error("Web server shutdown error", "error", err)
 		}
+	}
+
+	// Close watcher if indexing already set it up
+	if watcher != nil {
+		watcher.Close()
 	}
 
 	server.Close()

@@ -40,47 +40,45 @@ func (idx *Indexer) IndexModule(root string) error {
 		return fmt.Errorf("parse module: %w", err)
 	}
 
-	seen := make(map[string]struct{})
-	for _, node := range idx.graph.AllNodes() {
-		if _, ok := seen[node.Package]; !ok {
-			seen[node.Package] = struct{}{}
-			idx.graph.RemoveNodesForPackage(node.Package)
-		}
+	checker := types.NewChecker()
+	typeResult, err := checker.Check(root)
+	if err != nil {
+		slog.Warn("type check failed, continuing without interface data", "error", err)
 	}
 
+	newGraph := graph.New()
+
 	for _, node := range result.Nodes {
-		idx.graph.AddNode(node)
+		newGraph.AddNode(node)
 	}
 
 	resolveEdges(result)
 
 	for _, edge := range result.Edges {
-		idx.graph.AddEdge(edge)
+		newGraph.AddEdge(edge)
 	}
 
-	checker := types.NewChecker()
-	typeResult, err := checker.Check(root)
-	if err != nil {
-		slog.Warn("type check failed, continuing without interface data", "error", err)
-	} else {
+	if err == nil {
 		for _, node := range typeResult.Interfaces {
-			idx.graph.AddNode(node)
+			newGraph.AddNode(node)
 		}
 		for _, node := range typeResult.Types {
-			idx.graph.AddNode(node)
+			newGraph.AddNode(node)
 		}
 		for _, edge := range typeResult.Edges {
-			idx.graph.AddEdge(edge)
+			newGraph.AddEdge(edge)
 		}
 	}
 
-	idx.analyzeBehaviors(context.Background(), result.Nodes)
+	idx.analyzeBehaviors(context.Background(), newGraph, result.Nodes)
+
+	idx.graph.ReplaceAll(newGraph)
 
 	slog.Debug("indexing module complete", "nodes", len(result.Nodes), "edges", len(result.Edges))
 	return nil
 }
 
-func (idx *Indexer) analyzeBehaviors(ctx context.Context, nodes []*graph.Node) {
+func (idx *Indexer) analyzeBehaviors(ctx context.Context, g *graph.Graph, nodes []*graph.Node) {
 	if idx.behaviorAnalyzer == nil {
 		return
 	}
@@ -141,6 +139,12 @@ func (idx *Indexer) IndexFile(path string) error {
 		return fmt.Errorf("parse file: %w", err)
 	}
 
+	// Remove stale nodes from this specific file before re-indexing
+	// to avoid accumulating deleted/renamed functions.
+	// We scope to the file (not the whole package) to avoid destroying
+	// sibling files' nodes during incremental updates.
+	idx.graph.RemoveNodesForFile(path)
+
 	for _, node := range result.Nodes {
 		idx.graph.AddNode(node)
 	}
@@ -152,6 +156,10 @@ func (idx *Indexer) IndexFile(path string) error {
 	}
 
 	return nil
+}
+
+func (idx *Indexer) Graph() *graph.Graph {
+	return idx.graph
 }
 
 func resolveEdges(result *parser.ParseResult) {

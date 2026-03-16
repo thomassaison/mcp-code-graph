@@ -21,27 +21,13 @@ func NewPersister(dbPath string) (*Persister, error) {
 
 	// Enable WAL mode for better concurrent performance
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
-	return &Persister{
-		dbPath: dbPath,
-		db:     db,
-	}, nil
-}
-
-func (p *Persister) Close() error {
-	if p.db != nil {
-		return p.db.Close()
-	}
-	return nil
-}
-
-func (p *Persister) Save(g *Graph) error {
-	slog.Debug("graph save started", "db", p.dbPath)
-
-	_, err := p.db.Exec(`
+	// Create schema and indexes (idempotent).
+	// Migration: drop legacy edges table that lacks UNIQUE constraint.
+	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
@@ -54,30 +40,115 @@ func (p *Persister) Save(g *Graph) error {
 			docstring TEXT,
 			summary TEXT,
 			metadata TEXT
-		)
-	`)
+		);
+		CREATE INDEX IF NOT EXISTS idx_nodes_package ON nodes(package);
+		CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
+		CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
+	`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	// Migrate edges table: if it exists without the UNIQUE constraint, recreate it.
+	if err := migrateEdgesTable(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &Persister{
+		dbPath: dbPath,
+		db:     db,
+	}, nil
+}
+
+// migrateEdgesTable ensures the edges table has a UNIQUE constraint on (from_id, to_id, type).
+// If the table exists without the constraint (legacy schema), it is recreated.
+func migrateEdgesTable(db *sql.DB) error {
+	// Check if edges table exists
+	var tableName string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='edges'").Scan(&tableName)
+	if err == sql.ErrNoRows {
+		// Table doesn't exist yet, create with UNIQUE constraint
+		_, err := db.Exec(`
+			CREATE TABLE edges (
+				from_id TEXT NOT NULL,
+				to_id TEXT NOT NULL,
+				type TEXT NOT NULL,
+				metadata TEXT,
+				UNIQUE(from_id, to_id, type)
+			);
+			CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
+			CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);
+			CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
+		`)
+		return err
+	}
 	if err != nil {
 		return err
 	}
 
-	_, err = p.db.Exec(`
-		CREATE TABLE IF NOT EXISTS edges (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			from_id TEXT NOT NULL,
-			to_id TEXT NOT NULL,
-			type TEXT NOT NULL,
-			metadata TEXT
-		)
-	`)
+	// Table exists — check if it has the legacy 'id' column (AUTOINCREMENT schema)
+	var hasIDColumn bool
+	rows, err := db.Query("PRAGMA table_info(edges)")
 	if err != nil {
 		return err
 	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "id" {
+			hasIDColumn = true
+			break
+		}
+	}
+
+	if hasIDColumn {
+		// Legacy schema detected — migrate
+		slog.Info("migrating edges table to add UNIQUE constraint")
+		_, err := db.Exec(`
+			DROP TABLE IF EXISTS edges;
+			CREATE TABLE edges (
+				from_id TEXT NOT NULL,
+				to_id TEXT NOT NULL,
+				type TEXT NOT NULL,
+				metadata TEXT,
+				UNIQUE(from_id, to_id, type)
+			);
+			CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
+			CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);
+			CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
+		`)
+		return err
+	}
+
+	return nil
+}
+
+func (p *Persister) Close() error {
+	if p.db != nil {
+		return p.db.Close()
+	}
+	return nil
+}
+
+func (p *Persister) Save(g *Graph) error {
+	slog.Debug("graph save started", "db", p.dbPath)
+
+	// Snapshot the graph under a read lock to avoid concurrent map access.
+	nodes := g.AllNodes()
+	edges := g.AllEdges()
 
 	tx, err := p.db.Begin()
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.Exec("DELETE FROM edges")
 	if err != nil {
@@ -89,7 +160,7 @@ func (p *Persister) Save(g *Graph) error {
 		return err
 	}
 
-	for _, node := range g.nodes {
+	for _, node := range nodes {
 		var summaryJSON, metadataJSON []byte
 		if node.Summary != nil {
 			summaryJSON, err = json.Marshal(node.Summary)
@@ -114,27 +185,25 @@ func (p *Persister) Save(g *Graph) error {
 		}
 	}
 
-	for _, edges := range g.edges {
-		for _, edge := range edges {
-			var metadataJSON []byte
-			if edge.Metadata != nil {
-				metadataJSON, err = json.Marshal(edge.Metadata)
-				if err != nil {
-					return err
-				}
-			}
-
-			_, err = tx.Exec(`
-				INSERT INTO edges (from_id, to_id, type, metadata)
-				VALUES (?, ?, ?, ?)
-			`, edge.From, edge.To, edge.Type, string(metadataJSON))
+	for _, edge := range edges {
+		var metadataJSON []byte
+		if edge.Metadata != nil {
+			metadataJSON, err = json.Marshal(edge.Metadata)
 			if err != nil {
 				return err
 			}
 		}
+
+		_, err = tx.Exec(`
+			INSERT OR IGNORE INTO edges (from_id, to_id, type, metadata)
+			VALUES (?, ?, ?, ?)
+		`, edge.From, edge.To, edge.Type, string(metadataJSON))
+		if err != nil {
+			return err
+		}
 	}
 
-	slog.Debug("graph save complete", "nodes", len(g.nodes), "db", p.dbPath)
+	slog.Debug("graph save complete", "nodes", len(nodes), "db", p.dbPath)
 	return tx.Commit()
 }
 
@@ -148,7 +217,7 @@ func (p *Persister) Load(g *Graph) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		node := &Node{}
@@ -183,7 +252,7 @@ func (p *Persister) Load(g *Graph) error {
 	if err != nil {
 		return err
 	}
-	defer edgeRows.Close()
+	defer func() { _ = edgeRows.Close() }()
 
 	for edgeRows.Next() {
 		edge := &Edge{}

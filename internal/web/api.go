@@ -116,7 +116,7 @@ func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(GraphResponse{
+	_ = json.NewEncoder(w).Encode(GraphResponse{
 		Nodes: nodes,
 		Edges: edges,
 	})
@@ -145,7 +145,7 @@ func (h *Handler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(pkgs)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pkgs)
+	_ = json.NewEncoder(w).Encode(pkgs)
 }
 
 func (h *Handler) handlePackageNodes(w http.ResponseWriter, r *http.Request, pkg string) {
@@ -161,7 +161,7 @@ func (h *Handler) handlePackageNodes(w http.ResponseWriter, r *http.Request, pkg
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request, id string) {
@@ -169,7 +169,7 @@ func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request, id string) 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "node not found"})
+		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "node not found"})
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request, id string) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) handleNeighborhood(w http.ResponseWriter, r *http.Request, id string) {
@@ -217,7 +217,7 @@ func (h *Handler) handleNeighborhood(w http.ResponseWriter, r *http.Request, id 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "node not found"})
+		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "node not found"})
 		return
 	}
 
@@ -254,14 +254,14 @@ func (h *Handler) handleNeighborhood(w http.ResponseWriter, r *http.Request, id 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]PackageNode{})
+		_ = json.NewEncoder(w).Encode([]PackageNode{})
 		return
 	}
 
@@ -277,7 +277,7 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -299,5 +299,5 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }

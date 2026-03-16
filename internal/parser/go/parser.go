@@ -173,8 +173,8 @@ func (p *GoParser) ParsePackage(dir string) (*parser.ParseResult, error) {
 						edge.From = newID
 					}
 					// Rewrite placeholder targets (func_<shortName>_X -> func_<fullPath>_X)
-					if strings.HasPrefix(edge.To, oldPlaceholderPrefix) {
-						edge.To = newPlaceholderPrefix + strings.TrimPrefix(edge.To, oldPlaceholderPrefix)
+					if suffix, ok := strings.CutPrefix(edge.To, oldPlaceholderPrefix); ok {
+						edge.To = newPlaceholderPrefix + suffix
 					}
 					if newID, ok := idMap[edge.To]; ok {
 						edge.To = newID

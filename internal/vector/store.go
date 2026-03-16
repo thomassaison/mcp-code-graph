@@ -1,10 +1,11 @@
+// anthropic/claude-sonnet-4-6
 package vector
 
 import (
+	"container/heap"
 	"database/sql"
 	"fmt"
 	stdmath "math"
-	"sort"
 	"sync"
 
 	"github.com/thomassaison/mcp-code-graph/internal/math"
@@ -22,6 +23,8 @@ type cacheEntry struct {
 	codeText         string
 	summaryEmbedding []float32
 	codeEmbedding    []float32
+	summaryNorm      float32
+	codeNorm         float32
 }
 
 type Store struct {
@@ -66,7 +69,7 @@ func (s *Store) migrateIfNeeded() error {
 	if err != nil {
 		return fmt.Errorf("check schema: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var cid, notNull, pk int
@@ -110,7 +113,7 @@ func (s *Store) loadCache() error {
 	if err != nil {
 		return fmt.Errorf("load cache: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var nodeID, summaryText, codeText string
@@ -118,11 +121,15 @@ func (s *Store) loadCache() error {
 		if err := rows.Scan(&nodeID, &summaryText, &codeText, &summaryBytes, &codeBytes); err != nil {
 			continue
 		}
+		summaryEmb := nullableBytesToFloat32(summaryBytes)
+		codeEmb := nullableBytesToFloat32(codeBytes)
 		s.cache[nodeID] = cacheEntry{
 			summaryText:      summaryText,
 			codeText:         codeText,
-			summaryEmbedding: nullableBytesToFloat32(summaryBytes),
-			codeEmbedding:    nullableBytesToFloat32(codeBytes),
+			summaryEmbedding: summaryEmb,
+			codeEmbedding:    codeEmb,
+			summaryNorm:      math.L2Norm(summaryEmb),
+			codeNorm:         math.L2Norm(codeEmb),
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -193,54 +200,101 @@ func (s *Store) Insert(
 		codeText:         codeText,
 		summaryEmbedding: summaryEmb,
 		codeEmbedding:    codeEmb,
+		summaryNorm:      math.L2Norm(summaryEmb),
+		codeNorm:         math.L2Norm(codeEmb),
 	}
 	s.mu.Unlock()
 
 	return nil
 }
 
-// weightedScore computes the combined similarity score for a cache entry.
+// weightedScore computes the combined similarity score for a cache entry using
+// pre-computed norms and a single query norm to avoid redundant sqrt calls.
 // Returns 0 if the entry has no usable embeddings.
-func weightedScore(query []float32, entry cacheEntry) float32 {
-	hasSummary := entry.summaryEmbedding != nil
-	hasCode := entry.codeEmbedding != nil
+func weightedScore(query []float32, queryNorm float32, entry cacheEntry) float32 {
+	hasSummary := entry.summaryEmbedding != nil && entry.summaryNorm > 0
+	hasCode := entry.codeEmbedding != nil && entry.codeNorm > 0
+
+	cosineFast := func(emb []float32, embNorm float32) float32 {
+		if queryNorm == 0 {
+			return 0
+		}
+		dot := math.DotProduct(query, emb)
+		return dot / (queryNorm * embNorm)
+	}
+
 	switch {
 	case hasSummary && hasCode:
-		return 0.6*math.CosineSimilarity(query, entry.summaryEmbedding) +
-			0.4*math.CosineSimilarity(query, entry.codeEmbedding)
+		return 0.6*cosineFast(entry.summaryEmbedding, entry.summaryNorm) +
+			0.4*cosineFast(entry.codeEmbedding, entry.codeNorm)
 	case hasSummary:
-		return math.CosineSimilarity(query, entry.summaryEmbedding)
+		return cosineFast(entry.summaryEmbedding, entry.summaryNorm)
 	case hasCode:
-		return math.CosineSimilarity(query, entry.codeEmbedding)
+		return cosineFast(entry.codeEmbedding, entry.codeNorm)
 	default:
 		return 0
 	}
+}
+
+// resultHeap is a min-heap of SearchResult ordered by Score.
+// It is used to track the top-K results without sorting the full slice.
+type resultHeap []SearchResult
+
+func (h resultHeap) Len() int            { return len(h) }
+func (h resultHeap) Less(i, j int) bool  { return h[i].Score < h[j].Score } // min at root
+func (h resultHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *resultHeap) Push(x interface{}) { *h = append(*h, x.(SearchResult)) }
+func (h *resultHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// topK uses a min-heap of size limit to select the top-K results by score
+// without sorting the full candidate slice.
+func topK(candidates []SearchResult, limit int) []SearchResult {
+	if limit <= 0 {
+		return nil
+	}
+	h := &resultHeap{}
+	heap.Init(h)
+	for _, r := range candidates {
+		if h.Len() < limit {
+			heap.Push(h, r)
+		} else if r.Score > (*h)[0].Score {
+			heap.Pop(h)
+			heap.Push(h, r)
+		}
+	}
+	// Extract in descending order
+	result := make([]SearchResult, h.Len())
+	for i := len(result) - 1; i >= 0; i-- {
+		result[i] = heap.Pop(h).(SearchResult)
+	}
+	return result
 }
 
 func (s *Store) Search(query []float32, limit int) ([]SearchResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var results []SearchResult
+	queryNorm := math.L2Norm(query)
+	var candidates []SearchResult
 	for nodeID, entry := range s.cache {
-		score := weightedScore(query, entry)
+		score := weightedScore(query, queryNorm, entry)
 		if score == 0 {
 			continue
 		}
-		results = append(results, SearchResult{
+		candidates = append(candidates, SearchResult{
 			NodeID: nodeID,
 			Text:   entry.summaryText,
 			Score:  score,
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
-	if len(results) > limit {
-		results = results[:limit]
-	}
-	return results, nil
+	return topK(candidates, limit), nil
 }
 
 // HasEmbeddings reports whether summary and code embeddings exist for nodeID.
@@ -266,33 +320,43 @@ func (s *Store) ScoreNodes(query []float32, nodeIDs []string, limit int) []Searc
 		nodeSet[id] = struct{}{}
 	}
 
-	var results []SearchResult
+	queryNorm := math.L2Norm(query)
+	var candidates []SearchResult
 	for nodeID, entry := range s.cache {
 		if _, ok := nodeSet[nodeID]; !ok {
 			continue
 		}
-		score := weightedScore(query, entry)
+		score := weightedScore(query, queryNorm, entry)
 		if score == 0 {
 			continue
 		}
-		results = append(results, SearchResult{
+		candidates = append(candidates, SearchResult{
 			NodeID: nodeID,
 			Text:   entry.summaryText,
 			Score:  score,
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
-	if len(results) > limit {
-		results = results[:limit]
+	return topK(candidates, limit)
+}
+
+// Delete removes the embedding for nodeID from both the SQLite DB and the in-memory cache.
+// It is a no-op if nodeID does not exist.
+func (s *Store) Delete(nodeID string) error {
+	_, err := s.db.Exec(`DELETE FROM embeddings WHERE node_id = ?`, nodeID)
+	if err != nil {
+		return fmt.Errorf("delete embedding: %w", err)
 	}
-	return results
+
+	s.mu.Lock()
+	delete(s.cache, nodeID)
+	s.mu.Unlock()
+
+	return nil
 }
 
 func (s *Store) Close() {
 	if s.db != nil {
-		s.db.Close()
+		_ = s.db.Close()
 	}
 }

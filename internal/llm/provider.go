@@ -12,6 +12,8 @@ type SummaryRequest struct {
 	Package      string
 	Docstring    string
 	Code         string
+	File         string
+	Language     string
 }
 
 // LLMProvider generates function summaries using an LLM.

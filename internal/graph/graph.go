@@ -15,6 +15,7 @@ type Graph struct {
 	nodes   map[string]*Node
 	edges   map[string][]*Edge
 	inEdges map[string][]*Edge
+	edgeSet map[string]bool // dedup set: "from|to|type" → true
 
 	byType    map[NodeType]map[string]*Node
 	byPackage map[string]map[string]*Node
@@ -29,12 +30,18 @@ func New() *Graph {
 		nodes:       make(map[string]*Node),
 		edges:       make(map[string][]*Edge),
 		inEdges:     make(map[string][]*Edge),
+		edgeSet:     make(map[string]bool),
 		byType:      make(map[NodeType]map[string]*Node),
 		byPackage:   make(map[string]map[string]*Node),
 		byName:      make(map[string]map[string]*Node),
 		byInterface: make(map[string][]*Node),
 		byTypeImpl:  make(map[string][]*Node),
 	}
+}
+
+// edgeKey returns a unique key for an edge used for deduplication.
+func edgeKey(from, to string, edgeType EdgeType) string {
+	return from + "|" + to + "|" + string(edgeType)
 }
 
 func (g *Graph) AddNode(node *Node) {
@@ -74,6 +81,18 @@ func (g *Graph) AddNode(node *Node) {
 	g.byName[node.Name][node.ID] = node
 }
 
+func (g *Graph) SetNodeSummary(id string, summary *Summary) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node, ok := g.nodes[id]
+	if !ok {
+		return ErrNodeNotFound
+	}
+	node.Summary = summary
+	return nil
+}
+
 func (g *Graph) GetNode(id string) (*Node, error) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -88,6 +107,12 @@ func (g *Graph) GetNode(id string) (*Node, error) {
 func (g *Graph) AddEdge(edge *Edge) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	key := edgeKey(edge.From, edge.To, edge.Type)
+	if g.edgeSet[key] {
+		return // already exists, skip duplicate
+	}
+	g.edgeSet[key] = true
 
 	g.edges[edge.From] = append(g.edges[edge.From], edge)
 	g.inEdges[edge.To] = append(g.inEdges[edge.To], edge)
@@ -198,27 +223,50 @@ func (g *Graph) RemoveNodesForPackage(pkg string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	g.removeNodesLocked(func(id string) bool {
+		node, ok := g.byPackage[pkg][id]
+		return ok && node != nil
+	})
+
+	delete(g.byPackage, pkg)
+}
+
+// removeNodesLocked removes nodes (and their edges) matching the predicate.
+// Caller must hold g.mu write lock.
+func (g *Graph) removeNodesLocked(match func(id string) bool) {
 	nodeIDs := make(map[string]bool)
-	for id := range g.byPackage[pkg] {
-		nodeIDs[id] = true
+	for id := range g.nodes {
+		if match(id) {
+			nodeIDs[id] = true
+		}
 	}
 
+	// Remove edges from deleted nodes and clean edgeSet
 	for id := range nodeIDs {
+		for _, e := range g.edges[id] {
+			delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+		}
 		delete(g.edges, id)
+		for _, e := range g.inEdges[id] {
+			delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+		}
 		delete(g.inEdges, id)
 	}
 
+	// Remove edges pointing to deleted nodes from surviving nodes
 	for fromID, edges := range g.edges {
 		filtered := edges[:0]
 		for _, e := range edges {
-			if !nodeIDs[e.To] {
+			if nodeIDs[e.To] {
+				delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+			} else {
 				filtered = append(filtered, e)
 			}
 		}
 		g.edges[fromID] = filtered
 	}
 
-	// Clean up inEdges for surviving nodes - remove edges from deleted nodes
+	// Clean up inEdges for surviving nodes
 	for toID, edges := range g.inEdges {
 		filtered := edges[:0]
 		for _, e := range edges {
@@ -259,8 +307,130 @@ func (g *Graph) RemoveNodesForPackage(pkg string) {
 	for typeID := range nodeIDs {
 		delete(g.byTypeImpl, typeID)
 	}
+}
 
-	delete(g.byPackage, pkg)
+// RemoveNodesForFile removes all nodes (and their edges) that belong to the given file.
+// This is used for incremental re-indexing of a single file without
+// destroying sibling files in the same package.
+func (g *Graph) RemoveNodesForFile(file string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Collect nodes belonging to this file
+	nodeIDs := make(map[string]bool)
+	for id, node := range g.nodes {
+		if node.File == file {
+			nodeIDs[id] = true
+		}
+	}
+
+	if len(nodeIDs) == 0 {
+		return
+	}
+
+	// Determine the package for byPackage cleanup
+	var pkg string
+	for id := range nodeIDs {
+		pkg = g.nodes[id].Package
+		break
+	}
+
+	// Remove edges from/to deleted nodes and clean edgeSet
+	for id := range nodeIDs {
+		for _, e := range g.edges[id] {
+			delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+		}
+		delete(g.edges, id)
+		for _, e := range g.inEdges[id] {
+			delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+		}
+		delete(g.inEdges, id)
+	}
+
+	for fromID, edges := range g.edges {
+		filtered := edges[:0]
+		for _, e := range edges {
+			if nodeIDs[e.To] {
+				delete(g.edgeSet, edgeKey(e.From, e.To, e.Type))
+			} else {
+				filtered = append(filtered, e)
+			}
+		}
+		g.edges[fromID] = filtered
+	}
+
+	for toID, edges := range g.inEdges {
+		filtered := edges[:0]
+		for _, e := range edges {
+			if !nodeIDs[e.From] {
+				filtered = append(filtered, e)
+			}
+		}
+		g.inEdges[toID] = filtered
+	}
+
+	// Remove nodes from indexes
+	for id := range nodeIDs {
+		node := g.nodes[id]
+		delete(g.nodes, id)
+		delete(g.byType[node.Type], id)
+		if len(g.byType[node.Type]) == 0 {
+			delete(g.byType, node.Type)
+		}
+		delete(g.byName[node.Name], id)
+		if len(g.byName[node.Name]) == 0 {
+			delete(g.byName, node.Name)
+		}
+		if pkg != "" {
+			delete(g.byPackage[pkg], id)
+			if len(g.byPackage[pkg]) == 0 {
+				delete(g.byPackage, pkg)
+			}
+		}
+	}
+
+	// Clean up interface indexes
+	for ifaceID, impls := range g.byInterface {
+		filtered := impls[:0]
+		for _, impl := range impls {
+			if !nodeIDs[impl.ID] {
+				filtered = append(filtered, impl)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(g.byInterface, ifaceID)
+		} else {
+			g.byInterface[ifaceID] = filtered
+		}
+	}
+
+	for typeID := range nodeIDs {
+		delete(g.byTypeImpl, typeID)
+	}
+}
+
+func (g *Graph) ReplaceAll(other *Graph) {
+	// Guard against self-replacement which would deadlock
+	// because RWMutex is not reentrant
+	if g == other {
+		return
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	other.mu.RLock()
+	defer other.mu.RUnlock()
+
+	g.nodes = other.nodes
+	g.edges = other.edges
+	g.inEdges = other.inEdges
+	g.edgeSet = other.edgeSet
+	g.byType = other.byType
+	g.byPackage = other.byPackage
+	g.byName = other.byName
+	g.byInterface = other.byInterface
+	g.byTypeImpl = other.byTypeImpl
 }
 
 func (g *Graph) AllNodes() []*Node {
@@ -269,7 +439,7 @@ func (g *Graph) AllNodes() []*Node {
 
 	nodes := make([]*Node, 0, len(g.nodes))
 	for _, node := range g.nodes {
-		nodes = append(nodes, node)
+		nodes = append(nodes, node.Clone())
 	}
 	return nodes
 }
@@ -368,6 +538,54 @@ func (g *Graph) GetInterfaces(typeID string) []*Node {
 		result[i] = iface.Clone()
 	}
 	return result
+}
+
+func (g *Graph) GetNodesByFile(file string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var nodes []*Node
+	for _, node := range g.nodes {
+		if node.File == file {
+			nodes = append(nodes, node.Clone())
+		}
+	}
+	return nodes
+}
+
+func (g *Graph) GetNodesByPackageAndType(pkg string, nodeType NodeType) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var nodes []*Node
+	for _, node := range g.byPackage[pkg] {
+		if node.Type == nodeType {
+			nodes = append(nodes, node.Clone())
+		}
+	}
+	return nodes
+}
+
+func (g *Graph) GetNeighborsByEdgeType(nodeID string, edgeType EdgeType) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var result []*Node
+	for _, edge := range g.edges[nodeID] {
+		if edge.Type == edgeType {
+			if node, ok := g.nodes[edge.To]; ok {
+				result = append(result, node.Clone())
+			}
+		}
+	}
+	return result
+}
+
+func (g *Graph) FindTests(nodeID string) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return g.findTestsLocked(nodeID)
 }
 
 func (g *Graph) GetEdgesFrom(nodeID string) []*Edge {

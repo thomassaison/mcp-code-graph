@@ -2,6 +2,7 @@ package debug_test
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
@@ -26,7 +27,7 @@ func TestSetupLevel2EnablesTrace(t *testing.T) {
 	if err := debug.Setup(2, "", &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	slog.Log(nil, debug.LevelTrace, "trace message")
+	slog.Log(context.TODO(), debug.LevelTrace, "trace message")
 	if !strings.Contains(buf.String(), "trace message") {
 		t.Errorf("expected trace message in output, got: %s", buf.String())
 	}
@@ -37,7 +38,7 @@ func TestSetupLevel1SuppressesTrace(t *testing.T) {
 	if err := debug.Setup(1, "", &buf); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	slog.Log(nil, debug.LevelTrace, "should not appear")
+	slog.Log(context.TODO(), debug.LevelTrace, "should not appear")
 	if strings.Contains(buf.String(), "should not appear") {
 		t.Errorf("trace message should be suppressed at level 1, got: %s", buf.String())
 	}

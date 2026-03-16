@@ -1,17 +1,8 @@
+// anthropic/claude-sonnet-4-6
 package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log"
-	"log/slog"
-	"strings"
-	"time"
-
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/thomassaison/mcp-code-graph/internal/debug"
-	"github.com/thomassaison/mcp-code-graph/internal/graph"
 )
 
 type Tool struct {
@@ -179,653 +170,93 @@ func (s *Server) GetTools() []Tool {
 			},
 			Handler: s.handleSearchByBehavior,
 		},
-	}
-}
-
-func (s *Server) handleSearchFunctions(ctx context.Context, args map[string]any) (string, error) {
-	query, ok := args["query"].(string)
-	if !ok {
-		return "", fmt.Errorf("query must be a string")
-	}
-
-	limit := 10
-	if l, ok := args["limit"].(float64); ok {
-		limit = int(l)
-	}
-
-	slog.Debug("search functions", "query", query, "limit", limit)
-	if s.embeddingProvider != nil {
-		slog.Debug("using semantic search")
-		return s.semanticSearch(ctx, query, limit)
-	}
-
-	slog.Debug("using name search")
-	return s.nameSearch(query, limit)
-}
-
-func (s *Server) semanticSearch(ctx context.Context, query string, limit int) (string, error) {
-	queryEmbedding, err := s.embeddingProvider.Embed(ctx, query)
-	if err != nil {
-		log.Printf("warning: failed to embed query, falling back to name search: %v", err)
-		return s.nameSearch(query, limit)
-	}
-	slog.Debug("query embedded", "dim", len(queryEmbedding))
-
-	functions := s.graph.GetNodesByType(graph.NodeTypeFunction)
-	for _, fn := range functions {
-		if err := s.ensureFunctionEmbedding(ctx, fn); err != nil {
-			log.Printf("warning: failed to embed function %s: %v", fn.Name, err)
-		}
-	}
-
-	results, err := s.vector.Search(queryEmbedding, limit)
-	if err != nil {
-		log.Printf("warning: vector search failed, falling back to name search: %v", err)
-		return s.nameSearch(query, limit)
-	}
-	slog.Debug("vector search complete", "results", len(results))
-
-	var output []map[string]any
-	for _, r := range results {
-		node, err := s.graph.GetNode(r.NodeID)
-		if err != nil {
-			continue
-		}
-		output = append(output, map[string]any{
-			"id":        node.ID,
-			"name":      node.Name,
-			"package":   node.Package,
-			"signature": node.Signature,
-			"summary":   node.SummaryText(),
-			"score":     r.Score,
-		})
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) ensureFunctionEmbedding(ctx context.Context, node *graph.Node) error {
-	slog.Log(ctx, debug.LevelTrace, "ensuring function embedding", "function", node.Name)
-
-	hasSummary, hasCode := s.vector.HasEmbeddings(node.ID)
-	if hasSummary && hasCode {
-		return nil // already fully embedded
-	}
-
-	if node.Summary == nil || node.Summary.Text == "" {
-		if err := s.summary.Generate(ctx, node); err != nil {
-			return fmt.Errorf("generate summary: %w", err)
-		}
-		if node.Summary != nil {
-			s.graph.SetNodeSummary(node.ID, node.Summary) //nolint:errcheck
-		}
-	}
-
-	summaryText := node.SummaryText()
-	if summaryText == "" {
-		summaryText = fmt.Sprintf("%s %s", node.Name, node.Signature)
-	}
-
-	summaryEmb, err := s.embeddingProvider.Embed(ctx, summaryText)
-	if err != nil {
-		return fmt.Errorf("embed summary: %w", err)
-	}
-
-	var codeEmb []float32
-	if node.Code != "" {
-		codeEmb, err = s.embeddingProvider.Embed(ctx, node.Code)
-		if err != nil {
-			slog.Warn("failed to embed code, proceeding with summary only", "function", node.Name, "error", err)
-			codeEmb = nil
-		}
-	}
-
-	if err := s.vector.Insert(node.ID, summaryText, summaryEmb, node.Code, codeEmb); err != nil {
-		return fmt.Errorf("store embedding: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Server) nameSearch(query string, limit int) (string, error) {
-	functions := s.graph.GetNodesByType(graph.NodeTypeFunction)
-	var results []map[string]any
-
-	queryLower := strings.ToLower(query)
-
-	for _, fn := range functions {
-		nameLower := strings.ToLower(fn.Name)
-		pkgLower := strings.ToLower(fn.Package)
-
-		if strings.Contains(nameLower, queryLower) || strings.Contains(pkgLower, queryLower) {
-			results = append(results, map[string]any{
-				"id":        fn.ID,
-				"name":      fn.Name,
-				"package":   fn.Package,
-				"signature": fn.Signature,
-			})
-
-			if len(results) >= limit {
-				break
-			}
-		}
-	}
-
-	data, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleGetCallers(ctx context.Context, args map[string]any) (string, error) {
-	functionID, ok := args["function_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("function_id must be a string")
-	}
-
-	callers := s.graph.GetCallers(functionID)
-	var results []map[string]any
-	for _, caller := range callers {
-		results = append(results, map[string]any{
-			"id":        caller.ID,
-			"name":      caller.Name,
-			"package":   caller.Package,
-			"signature": caller.Signature,
-		})
-	}
-
-	data, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleGetCallees(ctx context.Context, args map[string]any) (string, error) {
-	functionID, ok := args["function_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("function_id must be a string")
-	}
-
-	callees := s.graph.GetCallees(functionID)
-	var results []map[string]any
-	for _, callee := range callees {
-		results = append(results, map[string]any{
-			"id":        callee.ID,
-			"name":      callee.Name,
-			"package":   callee.Package,
-			"signature": callee.Signature,
-		})
-	}
-
-	data, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleReindexProject(ctx context.Context, args map[string]any) (string, error) {
-	if err := s.indexer.IndexModule(s.config.ProjectPath); err != nil {
-		return "", fmt.Errorf("reindex failed: %w", err)
-	}
-
-	if err := s.persister.Save(s.graph); err != nil {
-		return "", fmt.Errorf("save graph: %w", err)
-	}
-
-	return fmt.Sprintf("Reindexed project: %d nodes, %d edges", s.graph.NodeCount(), s.graph.EdgeCount()), nil
-}
-
-func (s *Server) handleUpdateSummary(ctx context.Context, args map[string]any) (string, error) {
-	functionID, ok := args["function_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("function_id must be a string")
-	}
-
-	summaryText, ok := args["summary"].(string)
-	if !ok {
-		return "", fmt.Errorf("summary must be a string")
-	}
-
-	node, err := s.graph.GetNode(functionID)
-	if err != nil {
-		return "", fmt.Errorf("function not found: %w", err)
-	}
-
-	now := time.Now().Unix()
-	node.Summary = &graph.Summary{
-		Text:        summaryText,
-		GeneratedBy: "human",
-		Model:       "",
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	if err := s.persister.Save(s.graph); err != nil {
-		log.Printf("failed to save graph after updating summary: %v", err)
-	}
-
-	return fmt.Sprintf("Updated summary for function %s", node.Name), nil
-}
-
-func (s *Server) handleGetFunctionByName(ctx context.Context, args map[string]any) (string, error) {
-	name, ok := args["name"].(string)
-	if !ok {
-		return "", fmt.Errorf("name must be a string")
-	}
-
-	pkg, _ := args["package"].(string)
-	file, _ := args["file"].(string)
-
-	var nodes []*graph.Node
-	if pkg != "" {
-		nodes = s.graph.GetNodesByNameAndPackage(name, pkg)
-	} else {
-		nodes = s.graph.GetNodesByName(name)
-	}
-
-	if file != "" {
-		var filtered []*graph.Node
-		for _, n := range nodes {
-			if strings.Contains(n.File, file) {
-				filtered = append(filtered, n)
-			}
-		}
-		nodes = filtered
-	}
-
-	results := make([]map[string]any, 0)
-	for _, n := range nodes {
-		if n.Type != graph.NodeTypeFunction && n.Type != graph.NodeTypeMethod {
-			continue
-		}
-		results = append(results, map[string]any{
-			"id":        n.ID,
-			"name":      n.Name,
-			"package":   n.Package,
-			"signature": n.Signature,
-			"file":      n.File,
-			"line":      n.Line,
-			"docstring": n.Docstring,
-			"summary":   n.SummaryText(),
-		})
-	}
-
-	data, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleGetImplementors(ctx context.Context, args map[string]any) (string, error) {
-	interfaceID, ok := args["interface_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("interface_id must be a string")
-	}
-
-	ifaceNode, err := s.graph.GetNode(interfaceID)
-	if err != nil {
-		return "", fmt.Errorf("interface not found: %s", interfaceID)
-	}
-
-	implementors := s.graph.GetImplementors(interfaceID)
-
-	result := map[string]any{
-		"interface": map[string]any{
-			"id":      ifaceNode.ID,
-			"name":    ifaceNode.Name,
-			"package": ifaceNode.Package,
-			"methods": ifaceNode.Methods,
+		{
+			Name:        "get_neighborhood",
+			Description: "Get the local call graph around a node (bidirectional traversal)",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"node_id": map[string]any{"type": "string", "description": "The ID of the node"},
+					"depth":   map[string]any{"type": "number", "description": "Steps to traverse (default 2)", "default": 2},
+				},
+				"required": []string{"node_id"},
+			},
+			Handler: s.handleGetNeighborhood,
 		},
-		"implementors": []map[string]any{},
-	}
-
-	implList := make([]map[string]any, 0, len(implementors))
-	for _, impl := range implementors {
-		implList = append(implList, map[string]any{
-			"id":      impl.ID,
-			"name":    impl.Name,
-			"package": impl.Package,
-			"kind":    impl.Metadata["kind"],
-		})
-	}
-	result["implementors"] = implList
-
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleGetInterfaces(ctx context.Context, args map[string]any) (string, error) {
-	typeID, ok := args["type_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("type_id must be a string")
-	}
-
-	typeNode, err := s.graph.GetNode(typeID)
-	if err != nil {
-		return "", fmt.Errorf("type not found: %s", typeID)
-	}
-
-	interfaces := s.graph.GetInterfaces(typeID)
-
-	result := map[string]any{
-		"type": map[string]any{
-			"id":      typeNode.ID,
-			"name":    typeNode.Name,
-			"package": typeNode.Package,
-			"kind":    typeNode.Metadata["kind"],
+		{
+			Name:        "get_impact",
+			Description: "Analyze blast radius of changing a function: direct/indirect callers, tests, risk level",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"function_id": map[string]any{"type": "string", "description": "The ID of the function"},
+				},
+				"required": []string{"function_id"},
+			},
+			Handler: s.handleGetImpact,
 		},
-		"interfaces": []map[string]any{},
+		{
+			Name:        "trace_chain",
+			Description: "Find shortest call path between two functions",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"from_id":   map[string]any{"type": "string", "description": "Source function ID"},
+					"to_id":     map[string]any{"type": "string", "description": "Target function ID"},
+					"max_depth": map[string]any{"type": "number", "description": "Max path length (default 10)", "default": 10},
+				},
+				"required": []string{"from_id", "to_id"},
+			},
+			Handler: s.handleTraceChain,
+		},
+		{
+			Name:        "get_contract",
+			Description: "Get function contract: types accepted/returned, interfaces, callers, tests",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"function_id": map[string]any{"type": "string", "description": "The ID of the function"},
+				},
+				"required": []string{"function_id"},
+			},
+			Handler: s.handleGetContract,
+		},
+		{
+			Name:        "discover_patterns",
+			Description: "Discover code patterns in a package: constructors, error-handling, tests, entrypoints, sinks, sources, hotspots",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"package":      map[string]any{"type": "string", "description": "The package to analyze"},
+					"pattern_type": map[string]any{"type": "string", "description": "Pattern type: constructors, error-handling, tests, entrypoints, sinks, sources, hotspots"},
+				},
+				"required": []string{"package", "pattern_type"},
+			},
+			Handler: s.handleDiscoverPatterns,
+		},
+		{
+			Name:        "find_tests",
+			Description: "Find test functions that exercise a given function",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"function_id": map[string]any{"type": "string", "description": "The ID of the function"},
+				},
+				"required": []string{"function_id"},
+			},
+			Handler: s.handleFindTests,
+		},
+		{
+			Name:        "get_function_context",
+			Description: "Get complete LLM-ready context: code, callers, callees, contract, tests — everything in one call",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"function_id": map[string]any{"type": "string", "description": "The ID of the function"},
+				},
+				"required": []string{"function_id"},
+			},
+			Handler: s.handleGetFunctionContext,
+		},
 	}
-
-	ifaceList := make([]map[string]any, 0, len(interfaces))
-	for _, iface := range interfaces {
-		pointerReceiver := false
-		for _, edge := range s.graph.GetEdgesFrom(typeID) {
-			if edge.To == iface.ID && edge.Type == graph.EdgeTypeImplements {
-				if pr, ok := edge.Metadata["pointer_receiver"].(bool); ok {
-					pointerReceiver = pr
-				}
-				break
-			}
-		}
-
-		ifaceList = append(ifaceList, map[string]any{
-			"id":               iface.ID,
-			"name":             iface.Name,
-			"package":          iface.Package,
-			"pointer_receiver": pointerReceiver,
-		})
-	}
-	result["interfaces"] = ifaceList
-
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func (s *Server) handleSearchByBehavior(ctx context.Context, args map[string]any) (string, error) {
-	query, _ := args["query"].(string)
-
-	var behaviors []string
-	if behaviorsRaw, ok := args["behaviors"].([]any); ok {
-		for _, b := range behaviorsRaw {
-			if bs, ok := b.(string); ok {
-				behaviors = append(behaviors, bs)
-			}
-		}
-	}
-
-	limit := 10
-	if limitRaw, ok := args["limit"].(float64); ok {
-		limit = int(limitRaw)
-	}
-
-	nodes := s.graph.GetNodesByBehaviors(behaviors)
-
-	if s.embeddingProvider != nil {
-		return s.semanticBehaviorSearch(ctx, query, nodes, limit)
-	}
-
-	return s.formatBehaviorResults(nodes, limit), nil
-}
-
-func (s *Server) semanticBehaviorSearch(ctx context.Context, query string, nodes []*graph.Node, limit int) (string, error) {
-	queryEmbedding, err := s.embeddingProvider.Embed(ctx, query)
-	if err != nil {
-		slog.Debug("embedding failed, returning filtered results", "error", err)
-		return s.formatBehaviorResults(nodes, limit), nil
-	}
-
-	nodeIDs := make([]string, 0, len(nodes))
-	nodeByID := make(map[string]*graph.Node, len(nodes))
-	for _, node := range nodes {
-		if err := s.ensureFunctionEmbedding(ctx, node); err != nil {
-			continue
-		}
-		nodeIDs = append(nodeIDs, node.ID)
-		nodeByID[node.ID] = node
-	}
-
-	scored := s.vector.ScoreNodes(queryEmbedding, nodeIDs, limit)
-
-	var results []map[string]any
-	for _, r := range scored {
-		node, ok := nodeByID[r.NodeID]
-		if !ok {
-			continue
-		}
-		results = append(results, map[string]any{
-			"id":        node.ID,
-			"name":      node.Name,
-			"package":   node.Package,
-			"signature": node.Signature,
-			"behaviors": node.Metadata["behaviors"],
-			"summary":   node.SummaryText(),
-			"score":     r.Score,
-		})
-	}
-
-	resultJSON, _ := json.MarshalIndent(results, "", "  ")
-	return string(resultJSON), nil
-}
-
-func (s *Server) formatBehaviorResults(nodes []*graph.Node, limit int) string {
-	if limit > 0 && len(nodes) > limit {
-		nodes = nodes[:limit]
-	}
-
-	var results []map[string]any
-	for _, node := range nodes {
-		results = append(results, map[string]any{
-			"id":        node.ID,
-			"name":      node.Name,
-			"package":   node.Package,
-			"signature": node.Signature,
-			"behaviors": node.Metadata["behaviors"],
-			"summary":   node.SummaryText(),
-		})
-	}
-
-	resultJSON, _ := json.MarshalIndent(results, "", "  ")
-	return string(resultJSON)
-}
-
-// MCP handler methods (mcp-go compatible)
-
-func (s *Server) handleSearchFunctionsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	limit := 10
-	args := req.GetArguments()
-	if args != nil {
-		if l, ok := args["limit"].(float64); ok {
-			limit = int(l)
-		}
-	}
-
-	handlerArgs := map[string]any{
-		"query": query,
-		"limit": float64(limit),
-	}
-
-	result, err := s.handleSearchFunctions(ctx, handlerArgs)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleGetCallersMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	functionID, err := req.RequireString("function_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"function_id": functionID,
-	}
-
-	result, err := s.handleGetCallers(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleGetCalleesMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	functionID, err := req.RequireString("function_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"function_id": functionID,
-	}
-
-	result, err := s.handleGetCallees(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleReindexProjectMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := map[string]any{}
-
-	result, err := s.handleReindexProject(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleUpdateSummaryMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	functionID, err := req.RequireString("function_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	summaryText, err := req.RequireString("summary")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"function_id": functionID,
-		"summary":     summaryText,
-	}
-
-	result, err := s.handleUpdateSummary(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleGetFunctionByNameMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("name")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"name": name,
-	}
-
-	if pkg, ok := req.GetArguments()["package"].(string); ok && pkg != "" {
-		args["package"] = pkg
-	}
-	if file, ok := req.GetArguments()["file"].(string); ok && file != "" {
-		args["file"] = file
-	}
-
-	result, err := s.handleGetFunctionByName(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleGetImplementorsMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	interfaceID, err := req.RequireString("interface_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"interface_id": interfaceID,
-	}
-
-	result, err := s.handleGetImplementors(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleGetInterfacesMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	typeID, err := req.RequireString("type_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"type_id": typeID,
-	}
-
-	result, err := s.handleGetInterfaces(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
-}
-
-func (s *Server) handleSearchByBehaviorMCP(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	args := map[string]any{
-		"query": query,
-	}
-
-	if behaviorsRaw, ok := req.GetArguments()["behaviors"]; ok {
-		args["behaviors"] = behaviorsRaw
-	}
-
-	if limitRaw, ok := req.GetArguments()["limit"].(float64); ok {
-		args["limit"] = limitRaw
-	}
-
-	result, err := s.handleSearchByBehavior(ctx, args)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(result), nil
 }
